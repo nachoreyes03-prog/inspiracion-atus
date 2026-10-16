@@ -12,17 +12,17 @@ Archivo de webs de referencia: capturas, tipografías, paletas, layout y un prom
 | `data.js` | **Tus datos**: referencias, fuentes de inspiración y perfil de gusto |
 | `img/` | Capturas de cada referencia |
 | `live.js` | Webs nuevas de las galerías (lo escribe el robot, no se edita a mano) |
-| `scripts/fetch-live.mjs` | El robot: lee los feeds de Minimal Gallery, One Page Love, Land-book y SiteInspire |
-| `.github/workflows/live.yml` | Corre el robot todos los días a las 07:17 (hora de Argentina) |
+| `scripts/fetch-live.mjs` | El robot: lee los feeds de Minimal Gallery, One Page Love, SiteInspire, Lapa Ninja, CSS Winner, Behance, The FWA, Typewolf y Mindsparkle |
+| `.github/workflows/live.yml` | Corre el robot cada 6 horas |
 
 ## Descubrir
 
 La pestaña **Descubrir** tiene dos partes:
 
 - **Buscador:** escribís algo (mejor en inglés: *dark portfolio*, *architecture*) y cada botón abre esa búsqueda en Pinterest, Savee, Behance, Awwwards y otras galerías. *Sorprendeme* elige una idea al azar.
-- **En vivo:** las webs nuevas que publican las galerías, actualizadas una vez por día. *Para vos* muestra las que coinciden con tu gusto, *Otra tanda* las mezcla y *Guardar* las anota en tu dispositivo para pasárselas a Claude con *Copiar para Claude*.
+- **En vivo:** miles de webs publicadas en esas galerías (hasta 3.000), con filtros por galería y por tema. *Más nuevas* las ordena por fecha y *Al azar* las mezcla. *Otra tanda* trae siempre webs que todavía no viste. Al bajar se cargan más solas. *Para vos* muestra las que coinciden con tu gusto y *Guardar* las anota en tu dispositivo para pasárselas a Claude con *Copiar para Claude*.
 
-Para traer novedades en el momento: en GitHub andá a **Actions → Referencias en vivo → Run workflow**. Después tocá *Actualizar* en la página.
+Para traer novedades en el momento: en GitHub andá a **Actions → Referencias en vivo → Run workflow**. En *Páginas* poné 100 si querés volver a traer webs viejas de Minimal Gallery y One Page Love.
 
 Para verla en tu compu, abrí `index.html` con doble clic.
 

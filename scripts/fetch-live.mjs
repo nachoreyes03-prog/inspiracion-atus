@@ -1,19 +1,27 @@
-// Pulls the newest websites from gallery RSS feeds into live.js.
-// Runs every day on GitHub Actions (.github/workflows/live.yml). No dependencies: Node 18+.
+// Pulls websites from gallery RSS feeds into live.js and keeps a growing archive.
+// Runs on GitHub Actions (.github/workflows/live.yml). No dependencies: Node 18+.
+// PAGES=n reads n pages of the feeds that paginate (use a big number once to backfill old sites).
 import { readFile, writeFile } from 'node:fs/promises';
 
 const OUT = new URL('../live.js', import.meta.url);
-const MAX_ITEMS = 400;
-// Land-book answers 403 to bot-looking user agents, so present a regular browser one
+const MAX_ITEMS = 3000;
+const PAGES = Math.max(1, Math.min(300, parseInt(process.env.PAGES || '2', 10) || 2));
+// Some galleries answer 403 to bot-looking user agents, so present a regular browser one
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const FEEDS = [
-  { name: 'Minimal Gallery', url: 'https://minimal.gallery/feed/', home: 'https://minimal.gallery/' },
-  { name: 'One Page Love', url: 'https://onepagelove.com/feed', home: 'https://onepagelove.com/' },
-  { name: 'Land-book', url: 'https://land-book.com/feed', home: 'https://land-book.com/' },
-  { name: 'SiteInspire', url: 'https://www.siteinspire.com/websites/feed', home: 'https://www.siteinspire.com/' },
+  { name: 'Minimal Gallery', home: 'https://minimal.gallery/', url: p => `https://minimal.gallery/feed/?paged=${p}`, paged: true },
+  { name: 'One Page Love', home: 'https://onepagelove.com/', url: p => `https://onepagelove.com/feed?paged=${p}`, paged: true },
+  { name: 'SiteInspire', home: 'https://www.siteinspire.com/', url: () => 'https://www.siteinspire.com/websites/feed' },
+  { name: 'Lapa Ninja', home: 'https://www.lapa.ninja/', url: () => 'https://www.lapa.ninja/index.xml' },
+  { name: 'CSS Winner', home: 'https://www.csswinner.com/', url: () => 'https://www.csswinner.com/feed' },
+  { name: 'Behance', home: 'https://www.behance.net/', url: () => 'https://www.behance.net/feeds/projects?field=web%20design' },
+  { name: 'The FWA', home: 'https://thefwa.com/', url: () => 'https://www.thefwa.com/rss' },
+  { name: 'Typewolf', home: 'https://www.typewolf.com/', url: () => 'https://www.typewolf.com/feed' },
+  { name: 'Mindsparkle', home: 'https://mindsparklemag.com/', url: () => 'https://mindsparklemag.com/feed/' },
+  { name: 'Land-book', home: 'https://land-book.com/', url: () => 'https://land-book.com/feed' },
 ];
 // Categories that say nothing about the design
-const SKIP_CATS = /^(uncategorized|inspiration|website inspiration|long screenshot|featured)$/i;
+const SKIP_CATS = /^(uncategorized|inspiration|website inspiration|long screenshot|featured|designs?)$/i;
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', ndash: '–', mdash: '—', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»' };
 const unCdata = s => String(s || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
@@ -21,11 +29,13 @@ const decode = s => String(s || '')
   .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
   .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
   .replace(/&([a-z]+);/gi, (m, n) => ENTITIES[n.toLowerCase()] ?? m);
-const plain = s => decode(unCdata(s).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
-const esc = name => name.replace(':', '\\:');
-const tag = (xml, name) => { const m = xml.match(new RegExp(`<${esc(name)}(?:\\s[^>]*)?>([\\s\\S]*?)</${esc(name)}>`, 'i')); return m ? m[1] : ''; };
-const tags = (xml, name) => [...xml.matchAll(new RegExp(`<${esc(name)}(?:\\s[^>]*)?>([\\s\\S]*?)</${esc(name)}>`, 'gi'))].map(m => m[1]);
+// Some feeds (Lapa Ninja, CSS Winner) entity-escape their HTML, so decode before stripping tags
+const html = s => decode(unCdata(s));
+const plain = s => decode(html(s).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+const tag = (xml, name) => { const m = xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i')); return m ? m[1] : ''; };
+const tags = (xml, name) => [...xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'gi'))].map(m => m[1]);
 const isHttp = u => /^https?:\/\//i.test(u || '');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function imageOf(item) {
   const media = item.match(/<media:content[^>]*\surl="([^"]+)"/i)
@@ -35,18 +45,26 @@ function imageOf(item) {
     // SiteInspire serves 1600px crops; ask its image CDN for a card-sized one
     return decode(media[1]).replace('width=1600,height=1000', 'width=960,height=600');
   }
-  const html = unCdata(tag(item, 'content:encoded') + ' ' + tag(item, 'description'));
-  const srcset = html.match(/srcset="([^"]+)"/i);
+  const body = html(tag(item, 'content:encoded') + ' ' + tag(item, 'description'));
+  const srcset = body.match(/srcset=["']([^"']+)["']/i);
   if (srcset) {
-    const pick = decode(srcset[1]).split(',')
+    const pick = srcset[1].split(',')
       .map(part => part.trim().split(/\s+/))
       .map(([u, w]) => ({ u, w: parseInt(w, 10) || 0 }))
       .filter(c => isHttp(c.u) && c.w >= 700)
       .sort((a, b) => a.w - b.w)[0];
     if (pick) return pick.u;
   }
-  const img = html.match(/<img[^>]*\ssrc="([^"]+)"/i);
-  return img ? decode(img[1]) : '';
+  const img = body.match(/<img[^>]*\ssrc=["']([^"']+)["']/i);
+  return img ? img[1] : '';
+}
+
+function dateOf(raw, image) {
+  const d = new Date(plain(tag(raw, 'pubDate')) || plain(tag(raw, 'dc:date')));
+  if (!isNaN(d)) return d.toISOString();
+  // Typewolf has no dates but names its screenshots by day (…/sotd/2025-12-14.png)
+  const m = String(image).match(/(20\d\d-\d\d-\d\d)/);
+  return m ? new Date(m[1] + 'T12:00:00Z').toISOString() : '';
 }
 
 function parseItem(raw, feed) {
@@ -54,38 +72,60 @@ function parseItem(raw, feed) {
   const title = plain(tag(raw, 'title')).replace(/^website inspiration:\s*/i, '');
   if (!isHttp(link) || !title) return null;
   const [name, ...rest] = title.split(/\s+[|–—]\s+/);
-  const desc = plain(tag(raw, 'description'))
+  let desc = plain(tag(raw, 'description'))
     .replace(/\s*Full Review\s*$/i, '')
     .replace(/The post .* appeared first on .*$/i, '')
+    .replace(/^FWA of the day [^:]*:\s*/i, '')
+    .replace(/\s*Project Link\s*/i, ' ')
+    .replace(/#\w+/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
-  const date = new Date(plain(tag(raw, 'pubDate')));
+  if (desc.startsWith(title)) desc = desc.slice(title.length).trim();
   const image = imageOf(raw);
   return {
     title,
     name: name.trim(),
     tagline: rest.join(' – ').trim(),
-    desc: desc.length > 240 ? desc.slice(0, 237).replace(/\s+\S*$/, '') + '…' : desc,
+    desc: desc.length > 180 ? desc.slice(0, 177).replace(/\s+\S*$/, '') + '…' : desc,
     link,
     image: isHttp(image) ? image : '',
-    cats: [...new Set(tags(raw, 'category').map(plain).filter(c => c && !SKIP_CATS.test(c)))].slice(0, 6),
+    cats: [...new Set(tags(raw, 'category').map(plain).filter(c => c && c.length < 40 && !SKIP_CATS.test(c)))].slice(0, 5),
     source: feed.name,
-    date: isNaN(date) ? new Date().toISOString() : date.toISOString(),
+    date: dateOf(raw, image),
   };
 }
 
-async function readFeed(feed) {
-  const res = await fetch(feed.url, { headers: { 'user-agent': UA, accept: 'application/rss+xml, application/xml, text/xml, */*' }, signal: AbortSignal.timeout(25000) });
+async function readPage(url) {
+  const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/rss+xml, application/xml, text/xml, */*' }, signal: AbortSignal.timeout(25000) });
+  if (res.status === 404) return [];
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const xml = await res.text();
-  const items = xml.split(/<item[\s>]/i).slice(1).map(chunk => chunk.split(/<\/item>/i)[0]);
-  return items.map(raw => parseItem(raw, feed)).filter(Boolean);
+  return xml.split(/<item[\s>]/i).slice(1).map(chunk => chunk.split(/<\/item>/i)[0]);
+}
+
+async function readFeed(feed) {
+  const items = [];
+  const pages = feed.paged ? PAGES : 1;
+  for (let p = 1; p <= pages; p++) {
+    let raws;
+    try {
+      raws = await readPage(feed.url(p));
+    } catch (err) {
+      if (p === 1) throw err;
+      console.warn(`${feed.name}: stopped at page ${p} (${err.message})`);
+      break;
+    }
+    if (!raws.length) break;
+    items.push(...raws.map(raw => parseItem(raw, feed)).filter(Boolean));
+    if (pages > 1) await sleep(300);
+  }
+  return items;
 }
 
 async function readPrevious() {
   try {
     const js = await readFile(OUT, 'utf8');
-    const json = js.slice(js.indexOf('{'), js.lastIndexOf('}') + 1);
-    const data = JSON.parse(json);
+    const data = JSON.parse(js.slice(js.indexOf('{'), js.lastIndexOf('}') + 1));
     return Array.isArray(data.items) ? data : { items: [] };
   } catch {
     return { items: [] };
@@ -94,13 +134,19 @@ async function readPrevious() {
 
 const previous = await readPrevious();
 const byLink = new Map(previous.items.filter(i => i && i.link).map(i => [i.link, i]));
+const now = new Date().toISOString();
 const sources = [];
 let okCount = 0;
 
 for (const feed of FEEDS) {
   try {
     const items = await readFeed(feed);
-    for (const it of items) byLink.set(it.link, Object.assign({}, byLink.get(it.link), it));
+    for (const it of items) {
+      const old = byLink.get(it.link);
+      // Keep the first date we saw for feeds that don't publish one
+      it.date = it.date || (old && old.date) || now;
+      byLink.set(it.link, it);
+    }
     sources.push({ name: feed.name, home: feed.home, count: items.length, ok: true });
     okCount++;
     console.log(`${feed.name}: ${items.length} items`);
@@ -124,6 +170,17 @@ if (JSON.stringify(items) === JSON.stringify(previous.items)) {
   process.exit(0);
 }
 
-const data = { updated: new Date().toISOString(), sources, items };
-await writeFile(OUT, `// Generado por scripts/fetch-live.mjs en GitHub Actions. No lo edites a mano.\nwindow.ATUS_LIVE = ${JSON.stringify(data, null, 1)};\n`);
+// One site per line keeps the file small and the git diffs readable
+const body = [
+  '// Generado por scripts/fetch-live.mjs en GitHub Actions. No lo edites a mano.',
+  'window.ATUS_LIVE = {',
+  ` "updated": ${JSON.stringify(now)},`,
+  ` "sources": ${JSON.stringify(sources)},`,
+  ' "items": [',
+  items.map(i => '  ' + JSON.stringify(i)).join(',\n'),
+  ' ]',
+  '};',
+  '',
+].join('\n');
+await writeFile(OUT, body);
 console.log(`Wrote ${items.length} items (${items.length - previous.items.length >= 0 ? '+' : ''}${items.length - previous.items.length}).`);

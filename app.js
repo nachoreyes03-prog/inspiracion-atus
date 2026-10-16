@@ -555,8 +555,10 @@
     { name: 'Land-book', url: q => q ? 'https://land-book.com/?search=' + enc(q) : 'https://land-book.com/' },
     { name: 'One Page Love', url: q => q ? 'https://onepagelove.com/?s=' + enc(q) : 'https://onepagelove.com/' },
     { name: 'SiteInspire', url: q => q ? 'https://www.siteinspire.com/websites?search=' + enc(q) : 'https://www.siteinspire.com/' },
+    { name: 'Lapa Ninja', url: q => q ? 'https://www.lapa.ninja/search/?q=' + enc(q) : 'https://www.lapa.ninja/' },
     { name: 'Dribbble', url: q => 'https://dribbble.com/search/' + enc(web(q)) },
     { name: 'Fonts In Use', hint: 'tipografía', url: q => q ? 'https://fontsinuse.com/search?terms=' + enc(q) : 'https://fontsinuse.com/' },
+    { name: 'Typewolf', hint: 'tipografía', url: q => q ? 'https://www.google.com/search?q=' + enc('site:typewolf.com ' + q) : 'https://www.typewolf.com/site-of-the-day' },
     { name: '21st.dev', hint: 'componentes', url: q => q ? 'https://21st.dev/community/components/s/' + enc(q) : 'https://21st.dev/' },
     { name: 'ecomm.design', hint: 'ecommerce', url: q => q ? 'https://ecomm.design/?s=' + enc(q) : 'https://ecomm.design/' },
     { name: 'Google Imágenes', url: q => 'https://www.google.com/search?tbm=isch&q=' + enc(web(q)) },
@@ -569,21 +571,42 @@
     ['Músicos', 'musician'], ['Brutalista', 'brutalist'], ['Scroll horizontal', 'horizontal scroll'],
     ['Moda', 'fashion'], ['Fotografía', 'photography portfolio'],
   ];
-  // Words from the taste profile that make a new site worth flagging "Para vos" (feeds are in English).
+  // Words from the taste profile that make a site worth flagging "Para vos" (feeds are in English).
   const FOR_YOU = [['portfolio', 3], ['architect', 3], ['interior', 3], ['typograph', 3], ['big type', 3], ['swiss', 3],
     ['studio', 2], ['minimal', 2], ['dark', 2], ['black', 2], ['monochrom', 2], ['editorial', 2], ['grid', 2], ['photograph', 2],
     ['agency', 2], ['brutal', 2], ['grain', 2], ['music', 2], ['type', 1], ['museum', 1], ['gallery', 1], ['fashion', 1], ['creative', 1]];
   const PAGE = 24;
+  const fmtN = n => n.toLocaleString('es-AR');
 
-  const L = { filter: 'all', rank: null, shown: PAGE, saved: store.get('saved', []), clearConfirm: false, rendered: false };
+  const L = {
+    status: 'idle', // idle | loading | ready | error
+    filter: 'all', // all | foryou | saved
+    source: null,
+    cat: null,
+    mode: store.get('liveMode', 'new'), // new | random
+    rank: null,
+    shown: PAGE,
+    seen: new Set(store.get('seen', [])),
+    saved: store.get('saved', []),
+    clearConfirm: false,
+    rendered: false,
+  };
 
   const liveData = () => window.ATUS_LIVE || null;
-  const liveAll = () => {
+  const scoreOf = hs => FOR_YOU.reduce((n, [k, w]) => n + (hs.includes(k) ? w : 0), 0);
+  let allCache = [], allFrom = null;
+  // Items are prepared once per load: search text, taste score and timestamp
+  function liveAll() {
     const D = liveData();
-    return D && Array.isArray(D.items) ? D.items.filter(i => i && safeHref(i.link) && i.title) : [];
-  };
-  const liveText = i => norm([i.title, i.name, i.tagline, i.desc, arr(i.cats).join(' '), i.source].join(' '));
-  const forYou = i => { const s = liveText(i); return FOR_YOU.reduce((n, [k, w]) => n + (s.includes(k) ? w : 0), 0); };
+    if (!D || !Array.isArray(D.items)) return [];
+    if (allFrom === D.items) return allCache;
+    allFrom = D.items;
+    allCache = D.items.filter(i => i && safeHref(i.link) && i.title).map(i => {
+      const hs = norm([i.title, i.name, i.tagline, i.desc, arr(i.cats).join(' '), i.source].join(' '));
+      return Object.assign({}, i, { _hs: hs, _score: scoreOf(hs), _t: Date.parse(i.date) || 0 });
+    });
+    return allCache;
+  }
   const ago = iso => {
     const t = Date.parse(iso);
     if (!t) return '';
@@ -594,12 +617,25 @@
     const d = Math.round(hrs / 24);
     return d === 1 ? 'ayer' : `hace ${d} días`;
   };
-  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1); };
+  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + String(d.getFullYear()).slice(2); };
+
+  // live.js can be a couple of MB, so it loads only when Descubrir opens
+  function loadLive(force) {
+    if (L.status === 'loading' || (L.status === 'ready' && !force)) return;
+    L.status = 'loading';
+    renderLive();
+    const s = document.createElement('script');
+    s.src = 'live.js?v=' + Math.floor(Date.now() / 600000);
+    s.onload = () => { s.remove(); L.status = 'ready'; renderCounts(); renderLive(); };
+    s.onerror = () => { s.remove(); L.status = 'error'; renderLive(); };
+    document.body.append(s);
+  }
 
   function renderDiscover() {
     L.rendered = true;
     renderGalleries();
     renderLive();
+    loadLive();
   }
 
   function renderGalleries() {
@@ -624,20 +660,30 @@
     renderLive();
   }
 
+  // Random order puts sites you haven't seen first, so every batch brings new ones
+  function newRank() {
+    L.rank = new Map(liveAll().map(i => [i.link, (L.seen.has(i.link) ? 1 : 0) + Math.random()]));
+  }
+
   function liveList() {
     const all = liveAll();
     let list;
-    if (L.filter === 'saved') list = L.saved.map(s => all.find(i => i.link === s.link) || s);
-    else if (L.filter === 'all' || L.filter === 'foryou') list = all;
-    else list = all.filter(i => i.source === L.filter);
+    if (L.filter === 'saved') {
+      list = L.saved.map(s => all.find(i => i.link === s.link)
+        || Object.assign({ _hs: norm([s.title, s.name, s.source].join(' ')), _score: 0, _t: Date.parse(s.date) || 0, cats: [] }, s));
+    } else list = all;
+    if (L.source) list = list.filter(i => i.source === L.source);
+    if (L.cat) { const c = norm(L.cat); list = list.filter(i => arr(i.cats).some(x => norm(x) === c)); }
     const terms = norm($('#dq').value).split(/\s+/).filter(Boolean);
-    if (terms.length) list = list.filter(i => { const s = liveText(i); return terms.every(t => s.includes(t)); });
-    const byDate = (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
-    if (L.filter === 'foryou') {
-      return list.map(i => [i, forYou(i)]).filter(([, s]) => s >= 3).sort((a, b) => b[1] - a[1] || byDate(a[0], b[0])).map(([i]) => i);
+    if (terms.length) list = list.filter(i => terms.every(t => i._hs.includes(t)));
+    if (L.filter === 'foryou') list = list.filter(i => i._score >= 3);
+    if (L.filter === 'saved') return list;
+    if (L.mode === 'random') {
+      if (!L.rank) newRank();
+      return [...list].sort((a, b) => (L.rank.get(a.link) ?? 2) - (L.rank.get(b.link) ?? 2));
     }
-    if (L.rank) return [...list].sort((a, b) => (L.rank.get(a.link) ?? 1) - (L.rank.get(b.link) ?? 1));
-    return L.filter === 'saved' ? list : [...list].sort(byDate);
+    if (L.filter === 'foryou') return [...list].sort((a, b) => b._score - a._score || b._t - a._t);
+    return [...list].sort((a, b) => b._t - a._t);
   }
 
   function liveCard(it) {
@@ -652,10 +698,13 @@
     const blurb = it.tagline || it.desc;
     return h('article', { class: 'card' },
       h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title} en ${it.source}` },
-        img || ph(), forYou(it) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
+        img || ph(), (it._score || 0) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
       h('div', { class: 'card-head' }, h('h3', null, title), h('span', { class: 'dom' }, [it.source, dayOf(it.date)].filter(Boolean).join(' · '))),
       blurb ? h('p', { class: 'likes dna' }, blurb) : null,
-      arr(it.cats).length ? h('div', { class: 'tags' }, arr(it.cats).slice(0, 3).map(c => h('span', { class: 'tag static' }, c))) : null,
+      arr(it.cats).length ? h('div', { class: 'tags' }, arr(it.cats).slice(0, 3).map(c => h('button', {
+        class: 'tag', type: 'button', title: 'Ver más de “' + c + '”',
+        onclick: () => { L.cat = c; L.shown = PAGE; renderLive(); $('#live-filters').scrollIntoView({ block: 'start', behavior: 'smooth' }); },
+      }, c))) : null,
       h('div', { class: 'card-actions' },
         h('a', { class: 'btn sm', href: it.link, target: '_blank', rel: 'noopener noreferrer' }, 'Ver ↗'),
         h('button', { class: 'btn sm ' + (saved ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(saved), 'data-key': 'save:' + it.link, onclick: () => toggleSave(it) }, saved ? '✓ Guardada' : 'Guardar')));
@@ -671,25 +720,60 @@
     return el;
   }
 
+  function renderLiveFilters(all) {
+    const bySource = new Map(), byCat = new Map();
+    for (const i of all) {
+      bySource.set(i.source, (bySource.get(i.source) || 0) + 1);
+      for (const c of arr(i.cats)) byCat.set(c, (byCat.get(c) || 0) + 1);
+    }
+    const cats = [...byCat].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')).slice(0, 24);
+    if (L.cat && !cats.some(([c]) => c === L.cat)) cats.unshift([L.cat, byCat.get(L.cat) || 0]);
+    const set = fn => () => { fn(); L.shown = PAGE; renderLive(); };
+    put($('#live-filters'),
+      h('div', { class: 'frow' },
+        h('span', { class: 'lbl' }, 'Ver'),
+        chip('Todas', L.filter === 'all', set(() => { L.filter = 'all'; }), 'live:all'),
+        chip('Para vos', L.filter === 'foryou', set(() => { L.filter = 'foryou'; }), 'live:foryou'),
+        chip(['Guardadas', h('span', { class: 'c' }, pad(L.saved.length))], L.filter === 'saved', set(() => { L.filter = 'saved'; }), 'live:saved'),
+        h('span', { class: 'sep', 'aria-hidden': 'true' }),
+        chip('Más nuevas', L.mode === 'new', set(() => { L.mode = 'new'; store.set('liveMode', 'new'); }), 'live:new'),
+        chip('Al azar', L.mode === 'random', set(() => { L.mode = 'random'; store.set('liveMode', 'random'); newRank(); }), 'live:random')),
+      bySource.size ? h('div', { class: 'frow' },
+        h('span', { class: 'lbl' }, 'Galería'),
+        [...bySource].sort((a, b) => b[1] - a[1]).map(([name, n]) => chip([name, h('span', { class: 'c' }, fmtN(n))], L.source === name, set(() => { L.source = L.source === name ? null : name; }), 'live:src:' + name))) : null,
+      cats.length ? h('div', { class: 'frow' },
+        h('span', { class: 'lbl' }, 'Tema'),
+        cats.map(([c, n]) => chip([c, h('span', { class: 'c' }, fmtN(n))], L.cat === c, set(() => { L.cat = L.cat === c ? null : c; }), 'live:cat:' + c))) : null);
+  }
+
   function renderLive() {
     if (!L.rendered) return;
-    const D = liveData(), all = liveAll();
-    const names = D && Array.isArray(D.sources) ? D.sources.filter(s => s.ok !== false).map(s => s.name).filter(Boolean) : [...new Set(all.map(i => i.source))];
-    put($('#live-meta'), all.length
-      ? [h('span', null, h('b', null, String(all.length)), ' webs'), D.updated ? h('span', null, 'actualizado ', h('b', null, ago(D.updated))) : null, names.length ? h('span', null, names.join(' · ')) : null]
-      : h('span', null, 'Las novedades se cargan una vez por día desde GitHub.'));
+    const D = liveData(), all = liveAll(), grid = $('#live-grid'), more = $('#live-more');
+    $('#live-shuffle').disabled = L.status !== 'ready' || !all.length;
 
-    const counts = new Map();
-    for (const i of all) counts.set(i.source, (counts.get(i.source) || 0) + 1);
-    if (L.filter !== 'all' && L.filter !== 'foryou' && L.filter !== 'saved' && !counts.has(L.filter)) L.filter = 'all';
-    const setFilter = f => { L.filter = f; L.shown = PAGE; renderLive(); };
-    put($('#live-filters'),
-      h('span', { class: 'lbl' }, 'Ver'),
-      chip('Todas', L.filter === 'all', () => setFilter('all'), 'live:all'),
-      chip('Para vos', L.filter === 'foryou', () => setFilter('foryou'), 'live:foryou'),
-      chip(['Guardadas', h('span', { class: 'c' }, pad(L.saved.length))], L.filter === 'saved', () => setFilter('saved'), 'live:saved'),
-      counts.size ? h('span', { class: 'sep', 'aria-hidden': 'true' }) : null,
-      [...counts].map(([name, n]) => chip([name, h('span', { class: 'c' }, n)], L.filter === name, () => setFilter(name), 'live:' + name)));
+    if (L.status === 'idle' || L.status === 'loading') {
+      put($('#live-meta'), h('span', null, 'Cargando webs…'));
+      put($('#live-filters'));
+      more.hidden = true;
+      put(grid, notice('Cargando webs…', 'Son muchas; tarda un segundo.'));
+      return;
+    }
+    if (L.status === 'error') {
+      put($('#live-meta'));
+      put($('#live-filters'));
+      more.hidden = true;
+      put(grid, h('div', { class: 'notice' },
+        h('h2', null, 'No pude cargar las webs'),
+        h('p', null, 'Revisá la conexión. Si abriste el archivo en tu compu, usá la versión online.'),
+        h('button', { class: 'btn solid', type: 'button', onclick: () => loadLive(true) }, 'Probar de nuevo')));
+      return;
+    }
+
+    const live = D && Array.isArray(D.sources) ? D.sources.filter(s => s.ok !== false).length : 0;
+    put($('#live-meta'), all.length
+      ? [h('span', null, h('b', null, fmtN(all.length)), ' webs'), live ? h('span', null, 'de ', h('b', null, String(live)), ' galerías') : null, D.updated ? h('span', null, 'actualizado ', h('b', null, ago(D.updated))) : null]
+      : h('span', null, 'Las webs se cargan desde GitHub cada 6 horas.'));
+    renderLiveFilters(all);
 
     const bar = $('#saved-bar');
     bar.hidden = !L.saved.length;
@@ -700,27 +784,54 @@
         h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar la lista?' : 'Vaciar'));
     }
 
-    const grid = $('#live-grid'), more = $('#live-more');
     const list = liveList();
     if (!all.length && L.filter !== 'saved') {
       more.hidden = true;
-      put(grid, notice('Todavía no hay novedades', 'El robot de GitHub las trae una vez por día. Si abriste el archivo en tu compu, mirá la versión online.'));
+      put(grid, notice('Todavía no hay webs', 'El robot de GitHub las trae cada 6 horas.'));
       return;
     }
     if (!list.length) {
       more.hidden = true;
       const q = $('#dq').value.trim();
-      put(grid, L.filter === 'saved' && !q
+      put(grid, L.filter === 'saved' && !q && !L.source && !L.cat
         ? notice('No guardaste nada todavía', 'Tocá “Guardar” en las webs que te gusten y después copialas para Claude.')
-        : L.filter === 'foryou' && !q
-          ? notice('Nada para vos en esta tanda', 'Mañana llegan más. Mientras, mirá Todas.')
-          : notice(`Nada en las novedades con “${q}”`, 'Probá esa búsqueda en las galerías de arriba.'));
+        : q
+          ? notice(`Nada con “${q}”`, 'Probá esa búsqueda en las galerías de arriba o sacá algún filtro.')
+          : notice('Nada con esos filtros', 'Sacá algún filtro para ver más.'));
       return;
     }
     if (grid.querySelector('.notice')) put(grid);
-    reconcile(grid, list.slice(0, L.shown).map(getLiveCard));
+    L.visible = list.slice(0, L.shown);
+    reconcile(grid, L.visible.map(getLiveCard));
     more.hidden = list.length <= L.shown;
-    more.textContent = `Ver más (${list.length - Math.min(list.length, L.shown)})`;
+    more.textContent = `Ver más (${fmtN(list.length - Math.min(list.length, L.shown))})`;
+    setTimeout(autoMore, 60);
+  }
+
+  // Infinite scroll: when "Ver más" gets near the bottom of the screen, load the next batch.
+  // Each batch pushes the button further down, so this stops by itself.
+  let autoPending = false;
+  function autoMore() {
+    const more = $('#live-more');
+    if (autoPending || S.tab !== 'discover' || L.status !== 'ready' || more.hidden || !more.offsetParent) return;
+    if (more.getBoundingClientRect().top > window.innerHeight + 900) return;
+    autoPending = true;
+    setTimeout(() => { autoPending = false; L.shown += PAGE; renderLive(); }, 60);
+  }
+
+  function nextBatch() {
+    // Everything on screen counts as seen, then a fresh random order brings unseen sites first
+    for (const i of L.visible || []) L.seen.add(i.link);
+    if (L.seen.size >= liveAll().length) L.seen.clear();
+    store.set('seen', [...L.seen].slice(-6000));
+    L.mode = 'random';
+    store.set('liveMode', 'random');
+    if (L.filter === 'saved') L.filter = 'all';
+    newRank();
+    L.shown = PAGE;
+    renderLive();
+    $('#live-head').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    toast('Otra tanda: webs que todavía no viste');
   }
 
   function toggleSave(it) {
@@ -755,37 +866,6 @@
     if (L.filter === 'saved') L.filter = 'all';
     renderLive();
     toast('Lista vaciada');
-  }
-
-  function shuffleLive() {
-    L.rank = new Map(liveAll().map(i => [i.link, Math.random()]));
-    if (L.filter === 'foryou' || L.filter === 'saved') L.filter = 'all';
-    L.shown = PAGE;
-    renderLive();
-    $('#live-grid').scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }
-
-  function refreshLive() {
-    const btn = $('#live-refresh');
-    const before = (liveData() || {}).updated || '';
-    btn.disabled = true;
-    btn.textContent = 'Actualizando…';
-    const s = document.createElement('script');
-    s.src = 'live.js?t=' + Date.now();
-    const done = ok => {
-      s.remove();
-      btn.disabled = false;
-      btn.textContent = 'Actualizar';
-      if (!ok) { toast('No pude actualizar. Revisá la conexión.'); return; }
-      const now = (liveData() || {}).updated || '';
-      L.rank = null;
-      renderCounts();
-      renderLive();
-      toast(now && now !== before ? 'Llegaron novedades' : `Ya tenés lo último${now ? ' (' + ago(now) + ')' : ''}`);
-    };
-    s.onload = () => done(true);
-    s.onerror = () => done(false);
-    document.head.append(s);
   }
 
   /* ---------- boot ---------- */
@@ -828,9 +908,9 @@
       clearTimeout(dqT);
       dqT = setTimeout(renderLive, 150);
     });
-    $('#live-shuffle').addEventListener('click', shuffleLive);
-    $('#live-refresh').addEventListener('click', refreshLive);
+    $('#live-shuffle').addEventListener('click', nextBatch);
     $('#live-more').addEventListener('click', () => { L.shown += PAGE; renderLive(); });
+    window.addEventListener('scroll', autoMore, { passive: true });
 
     $('#sheet-close').addEventListener('click', requestClose);
     $('#sheet-scrim').addEventListener('click', requestClose);
