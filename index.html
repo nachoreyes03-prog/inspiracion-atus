@@ -20,6 +20,7 @@
     <a class="mark" href="#referencias" id="mark">Inspiración Atus</a>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" type="button" data-tab="refs" aria-controls="view-refs">Referencias <span class="n" id="n-refs"></span></button>
+      <button class="tab" role="tab" type="button" data-tab="discover" aria-controls="view-discover">Descubrir <span class="n" id="n-live"></span></button>
       <button class="tab" role="tab" type="button" data-tab="mix" aria-controls="view-mix">Mezclar <span class="n" id="n-mix"></span></button>
       <button class="tab" role="tab" type="button" data-tab="sources" aria-controls="view-sources">Fuentes <span class="n" id="n-sources"></span></button>
       <button class="tab" role="tab" type="button" data-tab="taste" aria-controls="view-taste">Tu gusto</button>
@@ -46,6 +47,37 @@
     <footer class="foot">
       <p>Para sumar una referencia, pedíselo a Claude o agregala en <code>data.js</code> con su captura en <code>img/</code>. Los pasos están en el README.</p>
     </footer>
+  </section>
+
+  <section class="view wrap" id="view-discover" role="tabpanel" aria-label="Descubrir" hidden>
+    <div class="view-head">
+      <div>
+        <h1>Descubrir</h1>
+        <p>Buscá en las galerías que usás y mirá las webs nuevas que publican cada día.</p>
+      </div>
+    </div>
+    <div class="disc">
+      <div class="search">
+        <label class="vh" for="dq">Buscar en las galerías</label>
+        <input id="dq" type="search" autocomplete="off" spellcheck="false" placeholder="Probá: dark portfolio, architecture, big type">
+      </div>
+      <div class="frow" id="d-ideas"></div>
+      <div class="gal-links" id="d-links"></div>
+    </div>
+    <div class="live-head">
+      <div>
+        <h2>En vivo</h2>
+        <p class="meta" id="live-meta"></p>
+      </div>
+      <div class="live-actions">
+        <button class="btn sm" type="button" id="live-shuffle">Otra tanda</button>
+        <button class="btn sm ghost" type="button" id="live-refresh">Actualizar</button>
+      </div>
+    </div>
+    <div class="saved-bar" id="saved-bar" hidden></div>
+    <div class="frow live-filters" id="live-filters"></div>
+    <div class="grid" id="live-grid"></div>
+    <div class="live-more"><button class="btn" type="button" id="live-more" hidden>Ver más</button></div>
   </section>
 
   <section class="view wrap" id="view-mix" role="tabpanel" aria-label="Mezclar" hidden>
@@ -114,6 +146,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="data.js"></script>
+<script src="live.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -137,8 +137,8 @@
   const promptOf = r => (typeof r.prompt === 'string' && r.prompt.trim()) ? r.prompt.trim() : buildPrompt(r);
 
   /* ---------- tabs + url ---------- */
-  const TABS = ['refs', 'mix', 'sources', 'taste'];
-  const TAB_HASH = { refs: 'referencias', mix: 'mezclar', sources: 'fuentes', taste: 'gusto' };
+  const TABS = ['refs', 'discover', 'mix', 'sources', 'taste'];
+  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', sources: 'fuentes', taste: 'gusto' };
   const tabFromHash = hash => TABS.find(t => '#' + TAB_HASH[t] === hash) || null;
   const setHash = hash => { try { history.replaceState(history.state, '', hash); } catch { /* file:// quirks */ } };
 
@@ -148,6 +148,7 @@
     store.set('tab', t);
     for (const b of $$('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
     for (const v of $$('.view')) v.hidden = v.id !== 'view-' + t;
+    if (t === 'discover') renderDiscover();
     if (!opts || !opts.keepHash) setHash('#' + TAB_HASH[t]);
     if (!opts || opts.scroll !== false) window.scrollTo(0, 0);
   }
@@ -165,6 +166,8 @@
     $('#n-refs').textContent = pad(REFS.length);
     $('#n-mix').textContent = S.mix.size ? pad(S.mix.size) : '';
     $('#n-sources').textContent = pad(SOURCES.length);
+    const fresh = liveAll().filter(i => Date.now() - Date.parse(i.date) < 7 * 864e5).length;
+    $('#n-live').textContent = fresh ? pad(fresh) : '';
     const updated = DATA && fmtDate(DATA.updated);
     put($('#meta'),
       h('span', null, h('b', null, pad(REFS.length)), ' referencias'),
@@ -538,6 +541,253 @@
       h('p', { class: 'muted prose' }, 'Cuando le pidas un diseño a Claude, decile “usá mi Inspiración Atus” o pegale este brief.'));
   }
 
+  /* ---------- discover: gallery search + live feed ---------- */
+  // Galleries are English-indexed; queries without "web/site" get "website" added where the site mixes other content.
+  const web = q => q ? (/\b(web|site|landing|ui)/i.test(q) ? q : q + ' website') : 'website design';
+  const enc = encodeURIComponent;
+  const GALLERIES = [
+    { name: 'Pinterest', url: q => 'https://ar.pinterest.com/search/pins/?q=' + enc(web(q)) },
+    { name: 'Savee', url: q => 'https://savee.com/search/?q=' + enc(q || 'website') },
+    { name: 'Behance', url: q => 'https://www.behance.net/search/projects/' + enc(web(q)) },
+    { name: 'Awwwards', url: q => q ? 'https://www.awwwards.com/websites/?text=' + enc(q) : 'https://www.awwwards.com/websites/' },
+    { name: 'CSS Design Awards', url: q => q ? 'https://www.cssdesignawards.com/search?q=' + enc(q) : 'https://www.cssdesignawards.com/website-gallery' },
+    { name: 'Minimal Gallery', url: q => q ? 'https://minimal.gallery/?s=' + enc(q) : 'https://minimal.gallery/' },
+    { name: 'Land-book', url: q => q ? 'https://land-book.com/?search=' + enc(q) : 'https://land-book.com/' },
+    { name: 'One Page Love', url: q => q ? 'https://onepagelove.com/?s=' + enc(q) : 'https://onepagelove.com/' },
+    { name: 'SiteInspire', url: q => q ? 'https://www.siteinspire.com/websites?search=' + enc(q) : 'https://www.siteinspire.com/' },
+    { name: 'Dribbble', url: q => 'https://dribbble.com/search/' + enc(web(q)) },
+    { name: 'Fonts In Use', hint: 'tipografía', url: q => q ? 'https://fontsinuse.com/search?terms=' + enc(q) : 'https://fontsinuse.com/' },
+    { name: '21st.dev', hint: 'componentes', url: q => q ? 'https://21st.dev/community/components/s/' + enc(q) : 'https://21st.dev/' },
+    { name: 'ecomm.design', hint: 'ecommerce', url: q => q ? 'https://ecomm.design/?s=' + enc(q) : 'https://ecomm.design/' },
+    { name: 'Google Imágenes', url: q => 'https://www.google.com/search?tbm=isch&q=' + enc(web(q)) },
+  ];
+  // Ideas come from the taste profile: label in Spanish, query in English for the galleries.
+  const IDEAS = [
+    ['Portfolio oscuro', 'dark portfolio'], ['Tipografía gigante', 'big typography'], ['Grilla suiza', 'swiss grid'],
+    ['Arquitectura', 'architecture'], ['Interiores', 'interior design'], ['Estudio creativo', 'creative studio'],
+    ['Blanco y negro', 'black and white'], ['Grano y textura', 'grain texture'], ['Editorial', 'editorial'],
+    ['Músicos', 'musician'], ['Brutalista', 'brutalist'], ['Scroll horizontal', 'horizontal scroll'],
+    ['Moda', 'fashion'], ['Fotografía', 'photography portfolio'],
+  ];
+  // Words from the taste profile that make a new site worth flagging "Para vos" (feeds are in English).
+  const FOR_YOU = [['portfolio', 3], ['architect', 3], ['interior', 3], ['typograph', 3], ['big type', 3], ['swiss', 3],
+    ['studio', 2], ['minimal', 2], ['dark', 2], ['black', 2], ['monochrom', 2], ['editorial', 2], ['grid', 2], ['photograph', 2],
+    ['agency', 2], ['brutal', 2], ['grain', 2], ['music', 2], ['type', 1], ['museum', 1], ['gallery', 1], ['fashion', 1], ['creative', 1]];
+  const PAGE = 24;
+
+  const L = { filter: 'all', rank: null, shown: PAGE, saved: store.get('saved', []), clearConfirm: false, rendered: false };
+
+  const liveData = () => window.ATUS_LIVE || null;
+  const liveAll = () => {
+    const D = liveData();
+    return D && Array.isArray(D.items) ? D.items.filter(i => i && safeHref(i.link) && i.title) : [];
+  };
+  const liveText = i => norm([i.title, i.name, i.tagline, i.desc, arr(i.cats).join(' '), i.source].join(' '));
+  const forYou = i => { const s = liveText(i); return FOR_YOU.reduce((n, [k, w]) => n + (s.includes(k) ? w : 0), 0); };
+  const ago = iso => {
+    const t = Date.parse(iso);
+    if (!t) return '';
+    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (m < 60) return `hace ${m || 1} min`;
+    const hrs = Math.round(m / 60);
+    if (hrs < 24) return `hace ${hrs} h`;
+    const d = Math.round(hrs / 24);
+    return d === 1 ? 'ayer' : `hace ${d} días`;
+  };
+  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1); };
+
+  function renderDiscover() {
+    L.rendered = true;
+    renderGalleries();
+    renderLive();
+  }
+
+  function renderGalleries() {
+    const q = $('#dq').value.trim();
+    put($('#d-ideas'),
+      h('span', { class: 'lbl' }, 'Ideas'),
+      IDEAS.map(([label, query]) => chip(label, norm(q) === norm(query), () => setQuery(norm(q) === norm(query) ? '' : query), 'idea:' + query)),
+      h('button', { class: 'btn sm', type: 'button', 'data-key': 'idea:random', onclick: () => {
+        const pool = IDEAS.filter(([, query]) => norm(query) !== norm(q));
+        setQuery(pool[Math.floor(Math.random() * pool.length)][1]);
+        restoreFocus('idea:random');
+      } }, 'Sorprendeme'));
+    put($('#d-links'), GALLERIES.map(g => h('a', { class: 'gal', href: g.url(q), target: '_blank', rel: 'noopener noreferrer' },
+      h('span', null, g.name), g.hint ? h('small', null, g.hint) : null)));
+  }
+
+  function setQuery(q) {
+    $('#dq').value = q;
+    store.set('dq', q);
+    L.shown = PAGE;
+    renderGalleries();
+    renderLive();
+  }
+
+  function liveList() {
+    const all = liveAll();
+    let list;
+    if (L.filter === 'saved') list = L.saved.map(s => all.find(i => i.link === s.link) || s);
+    else if (L.filter === 'all' || L.filter === 'foryou') list = all;
+    else list = all.filter(i => i.source === L.filter);
+    const terms = norm($('#dq').value).split(/\s+/).filter(Boolean);
+    if (terms.length) list = list.filter(i => { const s = liveText(i); return terms.every(t => s.includes(t)); });
+    const byDate = (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
+    if (L.filter === 'foryou') {
+      return list.map(i => [i, forYou(i)]).filter(([, s]) => s >= 3).sort((a, b) => b[1] - a[1] || byDate(a[0], b[0])).map(([i]) => i);
+    }
+    if (L.rank) return [...list].sort((a, b) => (L.rank.get(a.link) ?? 1) - (L.rank.get(b.link) ?? 1));
+    return L.filter === 'saved' ? list : [...list].sort(byDate);
+  }
+
+  function liveCard(it) {
+    const saved = L.saved.some(s => s.link === it.link);
+    const title = it.name || it.title;
+    const ph = () => h('span', { class: 'ph' }, h('span', { class: 'ph-name' }, title));
+    let img = null;
+    if (safeHref(it.image)) {
+      img = h('img', { src: it.image, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' });
+      img.addEventListener('error', () => img.replaceWith(ph()), { once: true });
+    }
+    const blurb = it.tagline || it.desc;
+    return h('article', { class: 'card' },
+      h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title} en ${it.source}` },
+        img || ph(), forYou(it) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
+      h('div', { class: 'card-head' }, h('h3', null, title), h('span', { class: 'dom' }, [it.source, dayOf(it.date)].filter(Boolean).join(' · '))),
+      blurb ? h('p', { class: 'likes dna' }, blurb) : null,
+      arr(it.cats).length ? h('div', { class: 'tags' }, arr(it.cats).slice(0, 3).map(c => h('span', { class: 'tag static' }, c))) : null,
+      h('div', { class: 'card-actions' },
+        h('a', { class: 'btn sm', href: it.link, target: '_blank', rel: 'noopener noreferrer' }, 'Ver ↗'),
+        h('button', { class: 'btn sm ' + (saved ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(saved), 'data-key': 'save:' + it.link, onclick: () => toggleSave(it) }, saved ? '✓ Guardada' : 'Guardar')));
+  }
+
+  const liveCache = new Map();
+  function getLiveCard(it) {
+    const sig = String(L.saved.some(s => s.link === it.link));
+    const c = liveCache.get(it.link);
+    if (c && c.sig === sig) return c.el;
+    const el = liveCard(it);
+    liveCache.set(it.link, { sig, el });
+    return el;
+  }
+
+  function renderLive() {
+    if (!L.rendered) return;
+    const D = liveData(), all = liveAll();
+    const names = D && Array.isArray(D.sources) ? D.sources.map(s => s.name).filter(Boolean) : [...new Set(all.map(i => i.source))];
+    put($('#live-meta'), all.length
+      ? [h('span', null, h('b', null, String(all.length)), ' webs'), D.updated ? h('span', null, 'actualizado ', h('b', null, ago(D.updated))) : null, names.length ? h('span', null, names.join(' · ')) : null]
+      : h('span', null, 'Las novedades se cargan una vez por día desde GitHub.'));
+
+    const counts = new Map();
+    for (const i of all) counts.set(i.source, (counts.get(i.source) || 0) + 1);
+    if (L.filter !== 'all' && L.filter !== 'foryou' && L.filter !== 'saved' && !counts.has(L.filter)) L.filter = 'all';
+    const setFilter = f => { L.filter = f; L.shown = PAGE; renderLive(); };
+    put($('#live-filters'),
+      h('span', { class: 'lbl' }, 'Ver'),
+      chip('Todas', L.filter === 'all', () => setFilter('all'), 'live:all'),
+      chip('Para vos', L.filter === 'foryou', () => setFilter('foryou'), 'live:foryou'),
+      chip(['Guardadas', h('span', { class: 'c' }, pad(L.saved.length))], L.filter === 'saved', () => setFilter('saved'), 'live:saved'),
+      counts.size ? h('span', { class: 'sep', 'aria-hidden': 'true' }) : null,
+      [...counts].map(([name, n]) => chip([name, h('span', { class: 'c' }, n)], L.filter === name, () => setFilter(name), 'live:' + name)));
+
+    const bar = $('#saved-bar');
+    bar.hidden = !L.saved.length;
+    if (L.saved.length) {
+      put(bar,
+        h('p', null, `Tenés ${L.saved.length} ${L.saved.length === 1 ? 'web guardada' : 'webs guardadas'} en este dispositivo. Pasáselas a Claude para sumarlas a tus referencias.`),
+        h('button', { class: 'btn sm solid', type: 'button', onclick: copySaved }, 'Copiar para Claude'),
+        h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar la lista?' : 'Vaciar'));
+    }
+
+    const grid = $('#live-grid'), more = $('#live-more');
+    const list = liveList();
+    if (!all.length && L.filter !== 'saved') {
+      more.hidden = true;
+      put(grid, notice('Todavía no hay novedades', 'El robot de GitHub las trae una vez por día. Si abriste el archivo en tu compu, mirá la versión online.'));
+      return;
+    }
+    if (!list.length) {
+      more.hidden = true;
+      const q = $('#dq').value.trim();
+      put(grid, L.filter === 'saved' && !q
+        ? notice('No guardaste nada todavía', 'Tocá “Guardar” en las webs que te gusten y después copialas para Claude.')
+        : L.filter === 'foryou' && !q
+          ? notice('Nada para vos en esta tanda', 'Mañana llegan más. Mientras, mirá Todas.')
+          : notice(`Nada en las novedades con “${q}”`, 'Probá esa búsqueda en las galerías de arriba.'));
+      return;
+    }
+    if (grid.querySelector('.notice')) put(grid);
+    reconcile(grid, list.slice(0, L.shown).map(getLiveCard));
+    more.hidden = list.length <= L.shown;
+    more.textContent = `Ver más (${list.length - Math.min(list.length, L.shown)})`;
+  }
+
+  function toggleSave(it) {
+    const key = 'save:' + it.link;
+    if (L.saved.some(s => s.link === it.link)) L.saved = L.saved.filter(s => s.link !== it.link);
+    else L.saved = [{ link: it.link, title: it.title, name: it.name || '', source: it.source, image: it.image || '', date: it.date || '' }, ...L.saved];
+    store.set('saved', L.saved);
+    L.clearConfirm = false;
+    renderLive();
+    restoreFocus(key);
+    toast(L.saved.some(s => s.link === it.link) ? 'Guardada' : 'Sacada de guardadas');
+  }
+
+  function copySaved() {
+    const lines = L.saved.map(s => `- ${s.name || s.title} (${s.source}): ${s.link}`);
+    copy(['Agregá estas webs a mi Inspiración Atus. Abrí cada una, sacá captura y armá el ADN y el prompt como las demás:', ...lines].join('\n'), 'Lista copiada: pegásela a Claude');
+  }
+
+  let clearT = 0;
+  function clearSaved() {
+    clearTimeout(clearT);
+    if (!L.clearConfirm) {
+      L.clearConfirm = true;
+      renderLive();
+      restoreFocus('saved:clear');
+      clearT = setTimeout(() => { L.clearConfirm = false; renderLive(); }, 4000);
+      return;
+    }
+    L.clearConfirm = false;
+    L.saved = [];
+    store.set('saved', L.saved);
+    if (L.filter === 'saved') L.filter = 'all';
+    renderLive();
+    toast('Lista vaciada');
+  }
+
+  function shuffleLive() {
+    L.rank = new Map(liveAll().map(i => [i.link, Math.random()]));
+    if (L.filter === 'foryou' || L.filter === 'saved') L.filter = 'all';
+    L.shown = PAGE;
+    renderLive();
+    $('#live-grid').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function refreshLive() {
+    const btn = $('#live-refresh');
+    const before = (liveData() || {}).updated || '';
+    btn.disabled = true;
+    btn.textContent = 'Actualizando…';
+    const s = document.createElement('script');
+    s.src = 'live.js?t=' + Date.now();
+    const done = ok => {
+      s.remove();
+      btn.disabled = false;
+      btn.textContent = 'Actualizar';
+      if (!ok) { toast('No pude actualizar. Revisá la conexión.'); return; }
+      const now = (liveData() || {}).updated || '';
+      L.rank = null;
+      renderCounts();
+      renderLive();
+      toast(now && now !== before ? 'Llegaron novedades' : `Ya tenés lo último${now ? ' (' + ago(now) + ')' : ''}`);
+    };
+    s.onload = () => done(true);
+    s.onerror = () => done(false);
+    document.head.append(s);
+  }
+
   /* ---------- boot ---------- */
   function applyHash() {
     const hash = location.hash;
@@ -568,6 +818,19 @@
     $('#mix-sections').addEventListener('input', e => { store.set('mixSections', e.target.value); renderMixOut(); });
     $('#mix-taste').addEventListener('change', e => { store.set('mixTaste', e.target.checked); renderMixOut(); });
     $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt de mezcla copiado'));
+
+    $('#dq').value = store.get('dq', '');
+    let dqT = 0;
+    $('#dq').addEventListener('input', e => {
+      store.set('dq', e.target.value);
+      L.shown = PAGE;
+      renderGalleries();
+      clearTimeout(dqT);
+      dqT = setTimeout(renderLive, 150);
+    });
+    $('#live-shuffle').addEventListener('click', shuffleLive);
+    $('#live-refresh').addEventListener('click', refreshLive);
+    $('#live-more').addEventListener('click', () => { L.shown += PAGE; renderLive(); });
 
     $('#sheet-close').addEventListener('click', requestClose);
     $('#sheet-scrim').addEventListener('click', requestClose);
