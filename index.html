@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspiración Atus</title>
+<meta name="description" content="Archivo de webs de referencia de Atus: capturas, tipografías, paletas y prompts para pedir diseños así.">
+<meta name="theme-color" content="#F4F5F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151613" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="mark" href="#referencias" id="mark">Inspiración Atus</a>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" role="tab" type="button" data-tab="refs" aria-controls="view-refs">Referencias <span class="n" id="n-refs"></span></button>
+      <button class="tab" role="tab" type="button" data-tab="mix" aria-controls="view-mix">Mezclar <span class="n" id="n-mix"></span></button>
+      <button class="tab" role="tab" type="button" data-tab="sources" aria-controls="view-sources">Fuentes <span class="n" id="n-sources"></span></button>
+      <button class="tab" role="tab" type="button" data-tab="taste" aria-controls="view-taste">Tu gusto</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="view wrap" id="view-refs" role="tabpanel" aria-label="Referencias">
+    <div class="intro">
+      <h1 class="statement">Lo que me gusta, por qué me gusta y cómo pedirlo.</h1>
+      <p class="meta" id="meta"></p>
+    </div>
+    <div class="toolbar">
+      <div class="search">
+        <label class="vh" for="q">Buscar referencias</label>
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá por rubro, fuente, color, estilo o nota">
+        <span class="hint" aria-hidden="true">/ para buscar</span>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="results" id="results" aria-live="polite"></div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <footer class="foot">
+      <p>Para sumar una referencia, pedíselo a Claude o agregala en <code>data.js</code> con su captura en <code>img/</code>. Los pasos están en el README.</p>
+    </footer>
+  </section>
+
+  <section class="view wrap" id="view-mix" role="tabpanel" aria-label="Mezclar" hidden>
+    <div class="view-head">
+      <div>
+        <h1>Mezclar referencias</h1>
+        <p>Elegí dos o más webs, decidí qué tomás de cada una y copiá un prompt listo para pedir el diseño.</p>
+      </div>
+    </div>
+    <div class="mix">
+      <div class="mix-col">
+        <div class="block">
+          <h2 class="field-lbl">Referencias</h2>
+          <div class="picker" id="mix-picker"></div>
+        </div>
+        <label class="fld"><span>Qué vas a diseñar</span><input class="in" id="mix-what" autocomplete="off" placeholder="La web de un estudio de arquitectura en Buenos Aires"></label>
+        <label class="fld"><span>Secciones (opcional)</span><input class="in" id="mix-sections" autocomplete="off" placeholder="Inicio, proyectos, estudio, contacto"></label>
+        <div class="block">
+          <h2 class="field-lbl">Qué tomás de cada una</h2>
+          <div class="aspects" id="mix-aspects"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="mix-taste" checked> Sumar tu perfil de gusto al prompt</label>
+      </div>
+      <div class="mix-out">
+        <div class="codebox">
+          <div class="codebox-head"><span>Prompt</span><button class="btn sm solid" type="button" id="mix-copy">Copiar prompt</button></div>
+          <pre id="mix-out"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view wrap" id="view-sources" role="tabpanel" aria-label="Fuentes" hidden>
+    <div class="view-head">
+      <div>
+        <h1>Dónde buscar</h1>
+        <p>Las páginas donde encontrás referencias y para qué sirve cada una.</p>
+      </div>
+    </div>
+    <ul class="src-list" id="src-list"></ul>
+  </section>
+
+  <section class="view wrap" id="view-taste" role="tabpanel" aria-label="Tu gusto" hidden>
+    <div class="view-head">
+      <div>
+        <h1>Tu gusto</h1>
+        <p>Lo que se repite en tus referencias. Pegá el brief antes de pedir un diseño.</p>
+      </div>
+    </div>
+    <div class="taste" id="taste-body"></div>
+  </section>
+</main>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-scrim" id="sheet-scrim"></div>
+  <div class="sheet-panel" id="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <span class="sheet-title" id="sheet-title"></span>
+      <button class="btn sm ghost" type="button" id="sheet-prev" aria-label="Referencia anterior">←</button>
+      <button class="btn sm ghost" type="button" id="sheet-next" aria-label="Referencia siguiente">→</button>
+      <button class="btn sm" type="button" id="sheet-close">Cerrar</button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
