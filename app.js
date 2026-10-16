@@ -674,7 +674,7 @@
   function renderLive() {
     if (!L.rendered) return;
     const D = liveData(), all = liveAll();
-    const names = D && Array.isArray(D.sources) ? D.sources.map(s => s.name).filter(Boolean) : [...new Set(all.map(i => i.source))];
+    const names = D && Array.isArray(D.sources) ? D.sources.filter(s => s.ok !== false).map(s => s.name).filter(Boolean) : [...new Set(all.map(i => i.source))];
     put($('#live-meta'), all.length
       ? [h('span', null, h('b', null, String(all.length)), ' webs'), D.updated ? h('span', null, 'actualizado ', h('b', null, ago(D.updated))) : null, names.length ? h('span', null, names.join(' · ')) : null]
       : h('span', null, 'Las novedades se cargan una vez por día desde GitHub.'));
