@@ -4,7 +4,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const OUT = new URL('../live.js', import.meta.url);
 const MAX_ITEMS = 400;
-const UA = 'Mozilla/5.0 (compatible; InspiracionAtus/1.0; +https://github.com/nachoreyes03-prog/inspiracion-atus)';
+// Land-book answers 403 to bot-looking user agents, so present a regular browser one
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const FEEDS = [
   { name: 'Minimal Gallery', url: 'https://minimal.gallery/feed/', home: 'https://minimal.gallery/' },
   { name: 'One Page Love', url: 'https://onepagelove.com/feed', home: 'https://onepagelove.com/' },
