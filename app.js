@@ -35,7 +35,8 @@
   const fmtN = n => n.toLocaleString('es-AR');
   const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return String(u || '').replace(/^https?:\/\/(www\.)?/i, '').replace(/\/.*$/, ''); } };
   const safeHref = u => (/^https?:\/\//i.test(u || '') ? u : null);
-  const imgSrc = p => encodeURI(String(p || ''));
+  // Remote image URLs are already encoded; only local paths (img/…) need it
+  const imgSrc = p => (/^https?:\/\//i.test(p || '') ? p : encodeURI(String(p || '')));
   const hexOf = s => {
     const m = String(s || '').match(/#([0-9a-f]{6}|[0-9a-f]{3})\b/i);
     if (!m) return null;
@@ -147,8 +148,8 @@
 
   /* ---------- state ---------- */
   const S = {
-    tab: 'refs', q: '', rubro: null, tag: null, atusOnly: false,
-    mix: new Set(store.get('mix', []).filter(id => REFS.some(r => r.id === id))),
+    tab: 'refs', q: '', rubro: null, tag: null, atusOnly: false, favOnly: false,
+    mix: new Set(store.get('mix', [])),
     aspects: store.get('aspects', {}),
     custom: store.get('mixCustom', {}),
     sheet: null, lastFocus: null, pushed: false,
@@ -224,6 +225,31 @@
   }
 
   /* ---------- references ---------- */
+  // Sites starred in Descubrir live in this device's storage and show up as references too.
+  // They have no hand-written DNA, so their prompt and mix lines point to the site itself.
+  function favRefs() {
+    return L.saved.map(s => {
+      const name = s.name || s.title, cats = arr(s.cats);
+      const r = {
+        id: 'fav:' + s.link, fav: true, name, url: s.link, image: s.image || '', source: s.source || '',
+        rubro: '', tags: [], cats, desc: s.desc || s.tagline || '',
+        prompt: [
+          `Diseñá una web con la dirección visual de ${name} (${s.link}).`,
+          `La guardé de ${s.source || 'una galería'}${cats.length ? ` (temas: ${cats.join(', ')})` : ''}.`,
+          s.desc ? `Cómo es: ${s.desc}` : '',
+          'Abrí la web y tomá su tipografía, paleta, layout y movimiento como dirección.',
+          'Adaptalo a: [describí tu proyecto acá].',
+        ].filter(Boolean).join('\n'),
+        // Gallery links point to the gallery's page about the site, so name the site, not the host
+        mixText: { type: `la tipografía de ${name}`, color: `los colores de ${name}`, layout: `el layout de ${name}`, motion: `el movimiento de ${name}`, tone: s.desc || `la actitud de ${name}` },
+      };
+      r._f = { q: '', name: field(name, s.source), cats: field(cats, 'favorito'), desc: field(r.desc), extra: field(s.link) };
+      return r;
+    });
+  }
+  const allRefs = () => [...REFS, ...favRefs()];
+  const findRef = id => allRefs().find(r => r.id === id);
+
   function render() {
     renderCounts();
     renderFilters();
@@ -233,7 +259,7 @@
   }
 
   function renderCounts() {
-    $('#n-refs').textContent = pad(REFS.length);
+    $('#n-refs').textContent = pad(REFS.length + L.saved.length);
     $('#n-mix').textContent = S.mix.size ? pad(S.mix.size) : '';
     const fresh = liveAll().filter(i => Date.now() - i._t < 7 * 864e5).length;
     $('#n-live').textContent = fresh ? fmtN(fresh) : '';
@@ -248,7 +274,8 @@
     const tags = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es')).slice(0, 14).map(([t]) => t);
     const atusN = REFS.filter(r => r.atus).length;
     put(box,
-      chip('Todas', !S.atusOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
+      chip('Todas', !S.atusOnly && !S.favOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.favOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
+      L.saved.length ? chip(`★ Favoritos ${L.saved.length}`, S.favOnly, () => { S.favOnly = !S.favOnly; render(); }, 'f:fav') : null,
       atusN ? chip('Para Atus', S.atusOnly, () => { S.atusOnly = !S.atusOnly; render(); }, 'f:atus') : null,
       rubros.map(rb => chip(rb, S.rubro === rb, () => { S.rubro = S.rubro === rb ? null : rb; render(); }, 'f:r:' + rb)),
       h('span', { class: 'sep', 'aria-hidden': 'true' }),
@@ -256,7 +283,7 @@
   }
 
   function visibleRefs() {
-    let list = REFS.filter(r => (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
+    let list = allRefs().filter(r => (!S.favOnly || r.fav) && (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
     const groups = parseQuery(S.q);
     if (!groups.length) return list;
     return list.map(r => [r, matchScore(r._f, groups)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([r]) => r);
@@ -270,11 +297,12 @@
     return el;
   }
 
+  const shotsOf = r => (r.fav ? (r.image ? [r.image] : []) : arr(r.shots));
   function refCard(r) {
-    const shots = arr(r.shots);
+    const shots = shotsOf(r);
     let imgA = null, imgB = null;
     if (shots[0]) {
-      imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async' });
+      imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null });
       imgA.addEventListener('error', () => imgA.replaceWith(placeholder(r.name, r.palette)), { once: true });
     }
     if (shots[1]) {
@@ -286,8 +314,8 @@
     const fonts = arr(r.fonts).map(fontName).filter(Boolean);
     return h('article', { class: 'card' },
       h('button', { class: 'shot', type: 'button', 'aria-label': 'Ver ' + r.name, 'data-key': 'card:' + r.id, onclick: e => openDetail(r.id, e.currentTarget) },
-        imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : null),
-      h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, host(r.url)) : null),
+        imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : r.fav ? h('span', { class: 'badge' }, '★') : null),
+      h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, r.fav ? r.source : host(r.url)) : null),
       (hexes.length || fonts.length) ? h('div', { class: 'card-dna' },
         hexes.length ? h('span', { class: 'sws' }, hexes.map(x => h('i', { style: { background: x } }))) : null,
         fonts.length ? h('span', { class: 'fonts' }, fonts.join(' · ')) : null) : null,
@@ -338,7 +366,7 @@
   }
 
   function toggleMix(id, key) {
-    const r = REFS.find(x => x.id === id);
+    const r = findRef(id);
     if (S.mix.has(id)) S.mix.delete(id); else S.mix.add(id);
     store.set('mix', [...S.mix]);
     render();
@@ -391,7 +419,7 @@
   function detailImg(path, alt) {
     let el = imgCache.get(path);
     if (!el) {
-      el = h('img', { src: imgSrc(path), alt, decoding: 'async' });
+      el = h('img', { src: imgSrc(path), alt, decoding: 'async', referrerpolicy: /^https?:/i.test(path) ? 'no-referrer' : null });
       el.addEventListener('error', () => el.remove(), { once: true });
       imgCache.set(path, el);
     }
@@ -427,6 +455,12 @@
 
   function dnaList(r) {
     const rows = [];
+    if (r.fav) {
+      if (r.source) rows.push(['Galería', r.source]);
+      if (arr(r.cats).length) rows.push(['Temas', arr(r.cats).join(', ')]);
+      if (r.desc) rows.push(['Cómo es', r.desc]);
+      return rows.length ? h('dl', { class: 'dl' }, rows.map(([k, v]) => [h('dt', null, k), h('dd', null, v)])) : null;
+    }
     if (r.dna) rows.push(['Por qué funciona', r.dna]);
     const f = arr(r.fonts);
     if (f.length) rows.push(['Tipografía', h('ul', { class: 'fontlist' }, f.map(x => h('li', null, x)))]);
@@ -445,12 +479,12 @@
   }
 
   function renderDetail() {
-    const r = REFS.find(x => x.id === S.sheet.id);
+    const r = findRef(S.sheet.id);
     if (!r) { requestClose(); return; }
     const list = visibleRefs();
     const pos = list.findIndex(x => x.id === r.id);
     setSheetHead(pos >= 0 ? `${pad(pos + 1)} / ${pad(list.length)}` : '', pos >= 0 && list.length > 1);
-    const shots = arr(r.shots);
+    const shots = shotsOf(r);
     const inMix = S.mix.has(r.id);
     const tags = arr(r.tags);
     put($('#sheet-body'), h('article', { class: 'detail' },
@@ -464,7 +498,8 @@
         h('div', { class: 'd-actions' },
           h('button', { class: 'btn solid', type: 'button', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
           h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
-          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir ↗') : null),
+          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir ↗') : null,
+          r.fav ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
         tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
           class: 'tag', type: 'button',
           onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
@@ -478,14 +513,14 @@
 
   /* ---------- mix ---------- */
   const ASPECTS = [
-    { k: 'type', label: 'Tipografía', hint: 'Poppins 700 en mayúscula…', get: r => arr(r.fonts).join('; ') },
-    { k: 'color', label: 'Paleta', hint: 'negro, blanco y un lima #C6F432…', get: r => arr(r.palette).join(', ') },
-    { k: 'layout', label: 'Layout', hint: 'hero con foto a sangre…', get: r => r.layout || '' },
-    { k: 'motion', label: 'Movimiento', hint: 'scroll suave, texto por palabra…', get: r => r.motion || '' },
-    { k: 'tone', label: 'Actitud', hint: 'sobria pero con humor…', get: r => r.likes || r.dna || '' },
+    { k: 'type', label: 'Tipografía', hint: 'Poppins 700 en mayúscula…', get: r => r.fav ? r.mixText.type : arr(r.fonts).join('; ') },
+    { k: 'color', label: 'Paleta', hint: 'negro, blanco y un lima #C6F432…', get: r => r.fav ? r.mixText.color : arr(r.palette).join(', ') },
+    { k: 'layout', label: 'Layout', hint: 'hero con foto a sangre…', get: r => r.fav ? r.mixText.layout : r.layout || '' },
+    { k: 'motion', label: 'Movimiento', hint: 'scroll suave, texto por palabra…', get: r => r.fav ? r.mixText.motion : r.motion || '' },
+    { k: 'tone', label: 'Actitud', hint: 'sobria pero con humor…', get: r => r.fav ? r.mixText.tone : r.likes || r.dna || '' },
     { k: 'extra', label: 'Otras cosas', hint: 'secciones, contenido, qué evitar…', get: () => '' },
   ];
-  const mixRefs = () => REFS.filter(r => S.mix.has(r.id));
+  const mixRefs = () => allRefs().filter(r => S.mix.has(r.id));
   const customOf = k => String(S.custom[k] || '').trim();
   function aspectPick(a, i, sel) {
     const cur = S.aspects[a.k];
@@ -501,12 +536,12 @@
   function renderMix() {
     const sel = mixRefs();
     // Picker with a preview of each site, so you can tell them apart
-    put($('#mix-picker'), REFS.map(r => {
+    put($('#mix-picker'), allRefs().map(r => {
       const on = S.mix.has(r.id);
-      const shot = arr(r.shots)[0];
-      const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async' }) : placeholder(r.name, r.palette);
+      const shot = shotsOf(r)[0];
+      const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null }) : placeholder(r.name, r.palette);
       return h('button', { type: 'button', class: 'pick', 'aria-pressed': String(on), 'data-key': 'mix:' + r.id, title: r.name, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
-        h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, r.name));
+        h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, (r.fav ? '★ ' : '') + r.name));
     }));
     // Each aspect: pick a reference and/or write anything
     put($('#mix-aspects'), ASPECTS.map((a, i) => {
@@ -541,7 +576,7 @@
     ASPECTS.forEach((a, i) => {
       const r = aspectPick(a, i, sel);
       const mine = customOf(a.k);
-      if (r) lines.push(`- ${a.label}, de ${r.name}${r.url ? ` (${host(r.url)})` : ''}: ${a.get(r)}${mine ? `. Además: ${mine}` : ''}`);
+      if (r) lines.push(`- ${a.label}, de ${r.name}${r.url ? ` (${r.fav ? r.url : host(r.url)})` : ''}: ${a.get(r)}${mine ? `. Además: ${mine}` : ''}`);
       else if (mine) lines.push(`- ${a.label}: ${mine}`);
     });
     if (!sel.length && !lines.length) return '';
@@ -559,7 +594,7 @@
     out.textContent = text || 'Tocá webs o escribí en los campos.';
     out.classList.toggle('muted', !text);
     $('#mix-copy').disabled = !text;
-    $('#mix-reset').disabled = !text && !$('#mix-what').value.trim();
+    $('#mix-reset').disabled = !S.mix.size && !Object.values(S.custom).some(v => String(v || '').trim()) && !$('#mix-what').value.trim();
   }
 
   // Clears webs, choices and everything written, with a way back
@@ -570,21 +605,30 @@
     store.set('mixWhat', $('#mix-what').value);
   }
   function resetMix() {
-    const before = { mix: [...S.mix], aspects: Object.assign({}, S.aspects), custom: Object.assign({}, S.custom), what: $('#mix-what').value };
-    S.mix = new Set();
-    S.aspects = {};
-    S.custom = {};
-    $('#mix-what').value = '';
-    saveMix();
-    render();
-    toast('Mezcla vacía', { label: 'Deshacer', fn: () => {
-      S.mix = new Set(before.mix);
-      S.aspects = before.aspects;
-      S.custom = before.custom;
-      $('#mix-what').value = before.what;
+    confirmBox('¿Seguro que querés resetear? Se deseleccionan las webs y se borra todo lo escrito.', 'Sí, resetear', () => {
+      S.mix = new Set();
+      S.aspects = {};
+      S.custom = {};
+      $('#mix-what').value = '';
+      $('#mix-taste').checked = true;
+      store.set('mixTaste', true);
       saveMix();
       render();
-    } });
+      window.scrollTo(0, 0);
+      toast('Mezcla reseteada');
+    });
+  }
+
+  // Small yes/no dialog; falls back to the browser's confirm() where <dialog> isn't supported
+  function confirmBox(text, yesLabel, onYes) {
+    const d = $('#confirm');
+    if (!d || typeof d.showModal !== 'function') { if (window.confirm(text)) onYes(); return; }
+    $('#confirm-text').textContent = text;
+    $('#confirm-yes').textContent = yesLabel;
+    $('#confirm-yes').onclick = () => { d.close(); onYes(); };
+    $('#confirm-no').onclick = () => d.close();
+    d.showModal();
+    $('#confirm-no').focus();
   }
 
   /* ---------- taste ---------- */
@@ -878,15 +922,24 @@
     $('#live-head').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
+  // Starred sites become references (see favRefs), so Referencias and Mezclar refresh too
   function toggleSave(it) {
     const key = 'save:' + it.link;
-    if (L.saved.some(s => s.link === it.link)) L.saved = L.saved.filter(s => s.link !== it.link);
-    else L.saved = [{ link: it.link, title: it.title, name: it.name || '', source: it.source, image: it.image || '', date: it.date || '' }, ...L.saved];
+    const wasSaved = L.saved.some(s => s.link === it.link);
+    if (wasSaved) {
+      L.saved = L.saved.filter(s => s.link !== it.link);
+      S.mix.delete('fav:' + it.link);
+      store.set('mix', [...S.mix]);
+    } else {
+      L.saved = [{ link: it.link, title: it.title, name: it.name || '', source: it.source, image: it.image || '', date: it.date || '',
+        cats: arr(it.cats).slice(0, 5), desc: it.desc || '', tagline: it.tagline || '' }, ...L.saved];
+    }
     store.set('saved', L.saved);
     L.clearConfirm = false;
+    render();
     renderLive();
-    if (S.tab === 'refs') renderRefLive();
     restoreFocus(key);
+    toast(wasSaved ? 'Sacada de favoritos' : '★ Guardada en Referencias');
   }
   function copySaved() {
     const lines = L.saved.map(s => `- ${s.name || s.title} (${s.source}): ${s.link}`);
@@ -903,9 +956,13 @@
       return;
     }
     L.clearConfirm = false;
+    for (const s of L.saved) S.mix.delete('fav:' + s.link);
+    store.set('mix', [...S.mix]);
     L.saved = [];
     store.set('saved', L.saved);
     L.filter = 'all';
+    S.favOnly = false;
+    render();
     renderLive();
   }
 
@@ -915,7 +972,7 @@
     const m = hash.match(/^#ref-(.+)$/);
     if (m) {
       const id = decodeURIComponent(m[1]);
-      if (REFS.some(r => r.id === id)) {
+      if (findRef(id)) {
         if (S.tab !== 'refs') setTab('refs', { scroll: false, keepHash: true });
         if (!S.sheet || S.sheet.id !== id) openDetail(id);
         return;
@@ -941,6 +998,8 @@
     $('#mix-taste').checked = store.get('mixTaste', true);
     $('#mix-what').addEventListener('input', e => { store.set('mixWhat', e.target.value); renderMixOut(); });
     $('#mix-taste').addEventListener('change', e => { store.set('mixTaste', e.target.checked); renderMixOut(); });
+    // Clicking the dark backdrop around the confirm dialog cancels it
+    $('#confirm').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
     $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt copiado'));
     $('#mix-reset').addEventListener('click', resetMix);
 
@@ -985,6 +1044,10 @@
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     });
+
+    // Drop mix picks whose reference no longer exists (e.g. a favorite removed on another visit)
+    for (const id of [...S.mix]) if (!findRef(id)) S.mix.delete(id);
+    store.set('mix', [...S.mix]);
 
     const initial = tabFromHash(location.hash) || (/^#ref-/.test(location.hash) ? 'refs' : store.get('tab', 'refs'));
     setTab(TABS.includes(initial) ? initial : 'refs', { scroll: false, keepHash: /^#ref-/.test(location.hash) });

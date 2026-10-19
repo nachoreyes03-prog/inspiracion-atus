@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261018-3">
 </head>
 <body>
 
@@ -94,8 +94,16 @@
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog class="confirm" id="confirm" aria-labelledby="confirm-text">
+  <p id="confirm-text"></p>
+  <div class="confirm-actions">
+    <button class="btn ghost" type="button" id="confirm-no">Cancelar</button>
+    <button class="btn solid" type="button" id="confirm-yes">Sí</button>
+  </div>
+</dialog>
 
-<script src="data.js"></script>
-<script src="app.js"></script>
+<!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
+<script src="data.js?v=20261018-3"></script>
+<script src="app.js?v=20261018-3"></script>
 </body>
 </html>
