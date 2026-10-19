@@ -142,7 +142,8 @@
   REFS.forEach(r => {
     r._f = {
       q: '', name: field(r.name, r.rubro), cats: field(arr(r.tags), r.rubro),
-      desc: field(r.likes, r.dna, r.layout, r.avoid), extra: field(arr(r.fonts), arr(r.palette), r.motion, r.stack, r.url, r.atus ? 'atus' : ''),
+      // Palette entries carry color names like "claro"; only the hex goes into search so they don't pass as a mood
+      desc: field(r.likes, r.dna, r.layout, r.avoid), extra: field(arr(r.fonts), arr(r.palette).map(hexOf).filter(Boolean), r.motion, r.stack, r.url, r.atus ? 'atus' : ''),
     };
   });
 
