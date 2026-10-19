@@ -247,6 +247,10 @@ img { max-width: 100%; }
 /* Toast */
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 8px); z-index: var(--z-toast); background: var(--ink); color: var(--bg); font: 500 0.8125rem/1.35 var(--font); padding: 11px 16px; opacity: 0; pointer-events: none; transition: opacity .18s var(--ease), transform .18s var(--ease); max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.has-act { display: flex; align-items: center; gap: 14px; }
+.toast.has-act.show { pointer-events: auto; }
+.toast-act { appearance: none; border: 0; background: none; padding: 4px 0; color: inherit; font: 600 0.8125rem/1 var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.head-actions { display: flex; gap: 6px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

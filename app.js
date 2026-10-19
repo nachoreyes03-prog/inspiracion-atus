@@ -156,12 +156,14 @@
 
   /* ---------- feedback ---------- */
   let toastT = 0;
-  function toast(msg) {
+  // An optional action ({label, fn}) adds a button, e.g. "Deshacer", and keeps the toast up longer
+  function toast(msg, action) {
     const t = $('#toast');
-    t.textContent = msg;
+    put(t, msg, action ? h('button', { class: 'toast-act', type: 'button', onclick: () => { clearTimeout(toastT); t.classList.remove('show'); action.fn(); } }, action.label) : null);
+    t.classList.toggle('has-act', !!action);
     t.classList.add('show');
     clearTimeout(toastT);
-    toastT = setTimeout(() => t.classList.remove('show'), 2000);
+    toastT = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2000);
   }
   function copy(text, done) {
     if (!text) return;
@@ -557,6 +559,32 @@
     out.textContent = text || 'Tocá webs o escribí en los campos.';
     out.classList.toggle('muted', !text);
     $('#mix-copy').disabled = !text;
+    $('#mix-reset').disabled = !text && !$('#mix-what').value.trim();
+  }
+
+  // Clears webs, choices and everything written, with a way back
+  function saveMix() {
+    store.set('mix', [...S.mix]);
+    store.set('aspects', S.aspects);
+    store.set('mixCustom', S.custom);
+    store.set('mixWhat', $('#mix-what').value);
+  }
+  function resetMix() {
+    const before = { mix: [...S.mix], aspects: Object.assign({}, S.aspects), custom: Object.assign({}, S.custom), what: $('#mix-what').value };
+    S.mix = new Set();
+    S.aspects = {};
+    S.custom = {};
+    $('#mix-what').value = '';
+    saveMix();
+    render();
+    toast('Mezcla vacía', { label: 'Deshacer', fn: () => {
+      S.mix = new Set(before.mix);
+      S.aspects = before.aspects;
+      S.custom = before.custom;
+      $('#mix-what').value = before.what;
+      saveMix();
+      render();
+    } });
   }
 
   /* ---------- taste ---------- */
@@ -914,6 +942,7 @@
     $('#mix-what').addEventListener('input', e => { store.set('mixWhat', e.target.value); renderMixOut(); });
     $('#mix-taste').addEventListener('change', e => { store.set('mixTaste', e.target.checked); renderMixOut(); });
     $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt copiado'));
+    $('#mix-reset').addEventListener('click', resetMix);
 
     $('#dq').value = store.get('dq', '');
     let dqT = 0;
