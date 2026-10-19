@@ -150,6 +150,7 @@
     tab: 'refs', q: '', rubro: null, tag: null, atusOnly: false,
     mix: new Set(store.get('mix', []).filter(id => REFS.some(r => r.id === id))),
     aspects: store.get('aspects', {}),
+    custom: store.get('mixCustom', {}),
     sheet: null, lastFocus: null, pushed: false,
   };
 
@@ -475,16 +476,20 @@
 
   /* ---------- mix ---------- */
   const ASPECTS = [
-    { k: 'type', label: 'Tipografía', get: r => arr(r.fonts).join('; ') },
-    { k: 'color', label: 'Paleta', get: r => arr(r.palette).join(', ') },
-    { k: 'layout', label: 'Layout', get: r => r.layout || '' },
-    { k: 'motion', label: 'Movimiento', get: r => r.motion || '' },
-    { k: 'tone', label: 'Actitud', get: r => r.likes || r.dna || '' },
+    { k: 'type', label: 'Tipografía', hint: 'Poppins 700 en mayúscula…', get: r => arr(r.fonts).join('; ') },
+    { k: 'color', label: 'Paleta', hint: 'negro, blanco y un lima #C6F432…', get: r => arr(r.palette).join(', ') },
+    { k: 'layout', label: 'Layout', hint: 'hero con foto a sangre…', get: r => r.layout || '' },
+    { k: 'motion', label: 'Movimiento', hint: 'scroll suave, texto por palabra…', get: r => r.motion || '' },
+    { k: 'tone', label: 'Actitud', hint: 'sobria pero con humor…', get: r => r.likes || r.dna || '' },
+    { k: 'extra', label: 'Otras cosas', hint: 'secciones, contenido, qué evitar…', get: () => '' },
   ];
   const mixRefs = () => REFS.filter(r => S.mix.has(r.id));
+  const customOf = k => String(S.custom[k] || '').trim();
   function aspectPick(a, i, sel) {
     const cur = S.aspects[a.k];
-    if (cur === 'none') return null;
+    if (cur === 'none' || a.k === 'extra') return null;
+    // What you write replaces the reference, unless you picked one on purpose
+    if (customOf(a.k) && !cur) return null;
     const found = sel.find(r => r.id === cur && a.get(r));
     if (found) return found;
     for (let j = 0; j < sel.length; j++) { const r = sel[(i + j) % sel.length]; if (a.get(r)) return r; }
@@ -501,30 +506,46 @@
       return h('button', { type: 'button', class: 'pick', 'aria-pressed': String(on), 'data-key': 'mix:' + r.id, title: r.name, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
         h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, r.name));
     }));
-    if (!sel.length) put($('#mix-aspects'));
-    else {
-      put($('#mix-aspects'), ASPECTS.map((a, i) => {
-        const pick = aspectPick(a, i, sel);
-        const select = h('select', { class: 'in', id: 'mix-' + a.k },
+    // Each aspect: pick a reference and/or write anything
+    put($('#mix-aspects'), ASPECTS.map((a, i) => {
+      const pick = aspectPick(a, i, sel);
+      let select = null;
+      if (sel.length && a.k !== 'extra') {
+        select = h('select', { class: 'in', id: 'mix-' + a.k, 'aria-label': a.label + ': referencia' },
           sel.map(r => h('option', { value: r.id, disabled: !a.get(r) }, r.name)),
           h('option', { value: 'none' }, '—'));
         select.value = pick ? pick.id : 'none';
         select.addEventListener('change', () => { S.aspects[a.k] = select.value; store.set('aspects', S.aspects); renderMixOut(); });
-        return h('div', { class: 'aspect' }, h('label', { for: 'mix-' + a.k }, a.label), h('div', { class: 'sel' }, select));
-      }));
-    }
+      }
+      const input = h('input', { class: 'in', id: 'mix-txt-' + a.k, autocomplete: 'off', value: S.custom[a.k] || '', placeholder: (select ? 'o escribí: ' : '') + a.hint, 'aria-label': a.label });
+      input.addEventListener('input', () => {
+        S.custom[a.k] = input.value;
+        store.set('mixCustom', S.custom);
+        // Writing takes over the auto-picked reference; a reference you chose on purpose stays
+        if (select && !S.aspects[a.k]) { const p = aspectPick(a, i, sel); select.value = p ? p.id : 'none'; }
+        renderMixOut();
+      });
+      return h('div', { class: 'aspect' },
+        h('label', { for: input.id }, a.label),
+        h('div', { class: 'ctl' }, select ? h('div', { class: 'sel' }, select) : null, input));
+    }));
     renderMixOut();
   }
 
   function mixPrompt() {
     const sel = mixRefs();
-    if (!sel.length) return '';
     const what = $('#mix-what').value.trim(), useTaste = $('#mix-taste').checked;
-    const L = [`Diseñá ${what || '[qué vas a diseñar]'}.`, '', sel.length > 1 ? 'Mezclá estas referencias tomando algo concreto de cada una:' : 'Usá esta referencia como dirección visual:'];
+    const lines = [];
     ASPECTS.forEach((a, i) => {
       const r = aspectPick(a, i, sel);
-      if (r) L.push(`- ${a.label}, de ${r.name}${r.url ? ` (${host(r.url)})` : ''}: ${a.get(r)}`);
+      const mine = customOf(a.k);
+      if (r) lines.push(`- ${a.label}, de ${r.name}${r.url ? ` (${host(r.url)})` : ''}: ${a.get(r)}${mine ? `. Además: ${mine}` : ''}`);
+      else if (mine) lines.push(`- ${a.label}: ${mine}`);
     });
+    if (!sel.length && !lines.length) return '';
+    const L = [`Diseñá ${what || '[qué vas a diseñar]'}.`, '',
+      sel.length > 1 ? 'Mezclá estas referencias tomando algo concreto de cada una:' : sel.length ? 'Usá esta referencia como dirección visual:' : 'Dirección visual:',
+      ...lines];
     const avoid = [...sel.map(r => r.avoid).filter(Boolean), ...(useTaste && TASTE ? arr(TASTE.avoid) : [])];
     if (avoid.length) L.push('', 'Evitar:', ...avoid.map(x => '- ' + x));
     if (useTaste && TASTE && TASTE.brief) L.push('', 'Mi gusto en general (Atus):', String(TASTE.brief).trim());
@@ -533,7 +554,7 @@
   }
   function renderMixOut() {
     const text = mixPrompt(), out = $('#mix-out');
-    out.textContent = text || 'Tocá las webs que querés mezclar.';
+    out.textContent = text || 'Tocá webs o escribí en los campos.';
     out.classList.toggle('muted', !text);
     $('#mix-copy').disabled = !text;
   }

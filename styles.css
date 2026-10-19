@@ -302,4 +302,8 @@ img { max-width: 100%; }
 .pick[aria-pressed="true"]::after { content: "✓"; position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font: 600 0.75rem/1 var(--mono); }
 .pick .ph-name { font-size: 0.875rem; }
 .aspects:empty { display: none; }
+.aspect { align-items: start; }
+.aspect > label { padding-top: 12px; }
+.aspect .ctl { display: grid; gap: 6px; min-width: 0; }
+@media (max-width: 520px) { .aspect > label { padding-top: 0; } }
 .taste { padding-top: 28px; }
