@@ -320,9 +320,9 @@
       (hexes.length || fonts.length) ? h('div', { class: 'card-dna' },
         hexes.length ? h('span', { class: 'sws' }, hexes.map(x => h('i', { style: { background: x } }))) : null,
         fonts.length ? h('span', { class: 'fonts' }, fonts.join(' · ')) : null) : null,
-      h('div', { class: 'card-actions' },
-        h('button', { class: 'btn sm', type: 'button', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
-        h('button', { class: 'btn sm ' + (inMix ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'card-mix:' + r.id, onclick: () => toggleMix(r.id, 'card-mix:' + r.id) }, inMix ? '✓ Mezcla' : '+ Mezcla')));
+      h('div', { class: 'card-actions', 'data-pour': 'contain' },
+        h('button', { class: 'btn sm', type: 'button', 'data-tip': 'Para pegarle a Claude', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
+        h('button', { class: 'btn sm ' + (inMix ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'card-mix:' + r.id, 'data-tip': inMix ? 'Sacar de Mezclar' : 'Sumar a Mezclar', onclick: () => toggleMix(r.id, 'card-mix:' + r.id) }, inMix ? '✓ Mezcla' : '+ Mezcla')));
   }
 
   const cardCache = new Map();
@@ -362,7 +362,7 @@
     put(box,
       h('div', { class: 'also-head' },
         h('h2', null, hits.length ? `${fmtN(hits.length)} webs de galerías con “${q}”` : `Nada en las galerías con “${q}”`),
-        hits.length ? h('button', { class: 'btn sm', type: 'button', onclick: () => { $('#dq').value = q; store.set('dq', q); L.shown = PAGE; setTab('discover'); } }, 'Ver todas') : null),
+        hits.length ? h('button', { class: 'btn sm', type: 'button', 'data-tip': 'Abrir en Descubrir', onclick: () => { $('#dq').value = q; store.set('dq', q); L.shown = PAGE; setTab('discover'); } }, 'Ver todas') : null),
       hits.length ? h('div', { class: 'grid' }, hits.slice(0, 8).map(getLiveCard)) : null);
   }
 
@@ -496,11 +496,11 @@
           safeHref(r.url) ? h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, host(r.url) + ' ↗') : null,
           r.rubro ? h('span', null, r.rubro) : null,
           r.atus ? h('span', { class: 'badge inline' }, 'Para Atus') : null),
-        h('div', { class: 'd-actions' },
-          h('button', { class: 'btn solid', type: 'button', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
-          h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
-          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir ↗') : null,
-          r.fav ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
+        h('div', { class: 'd-actions', 'data-pour': 'contain' },
+          h('button', { class: 'btn solid', type: 'button', 'data-tip': 'Para pegarle a Claude', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
+          h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', 'data-tip': inMix ? 'Sacar de Mezclar' : 'Sumar a Mezclar', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
+          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Ver la web en vivo' }, 'Abrir ↗') : null,
+          r.fav ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
         tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
           class: 'tag', type: 'button',
           onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
@@ -648,7 +648,7 @@
     if (!t) { put($('#taste-body'), notice('Todavía no hay perfil de gusto', null)); return; }
     put($('#taste-body'),
       h('p', { class: 'taste-summary' }, t.summary || ''),
-      t.brief ? h('div', { class: 'd-actions' }, h('button', { class: 'btn solid', type: 'button', onclick: () => copy(String(t.brief), 'Brief copiado') }, 'Copiar brief de gusto')) : null,
+      t.brief ? h('div', { class: 'd-actions', 'data-pour': 'contain' }, h('button', { class: 'btn solid', type: 'button', 'data-tip': 'Pegalo antes de pedir diseños', onclick: () => copy(String(t.brief), 'Brief copiado') }, 'Copiar brief de gusto')) : null,
       h('div', { class: 'taste-cols' },
         h('div', null, h('h2', null, 'Se repite'), h('ul', { class: 'rules' }, arr(t.rules).map(x => h('li', null, x)))),
         h('div', null, h('h2', null, 'Evitás'), h('ul', { class: 'rules' }, arr(t.avoid).map(x => h('li', null, x)))),
@@ -808,10 +808,10 @@
     }
     const saved = L.saved.some(s => s.link === it.link);
     return h('article', { class: 'card live' },
-      h('div', { class: 'shot-wrap' },
+      h('div', { class: 'shot-wrap', 'data-pour': 'below contain' },
         h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title}` },
           img || placeholder(title), (it._score || 0) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
-        h('button', { class: 'save' + (saved ? ' on' : ''), type: 'button', 'aria-pressed': String(saved), 'aria-label': saved ? 'Sacar de guardadas' : 'Guardar', 'data-key': 'save:' + it.link, onclick: () => toggleSave(it) }, saved ? '★' : '☆')),
+        h('button', { class: 'save' + (saved ? ' on' : ''), type: 'button', 'aria-pressed': String(saved), 'aria-label': saved ? 'Sacar de guardadas' : 'Guardar', 'data-key': 'save:' + it.link, 'data-tip': saved ? 'Sacar de Referencias' : 'Guardar en Referencias', onclick: () => toggleSave(it) }, saved ? '★' : '☆')),
       h('div', { class: 'card-head' },
         h('a', { class: 'title', href: it.link, target: '_blank', rel: 'noopener noreferrer' }, title),
         h('span', { class: 'dom' }, it.source)));
@@ -879,9 +879,10 @@
     const bar = $('#saved-bar');
     bar.hidden = !L.saved.length || L.filter !== 'saved';
     if (!bar.hidden) {
-      put(bar,
-        h('button', { class: 'btn sm solid', type: 'button', onclick: copySaved }, 'Copiar para Claude'),
-        h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar?' : 'Vaciar'));
+      // The buttons go in their own group: put() replaces the bar's children, tooltip layer included
+      put(bar, h('div', { class: 'head-actions', 'data-pour': '' },
+        h('button', { class: 'btn sm solid', type: 'button', 'data-tip': 'Tus ★ en un prompt', onclick: copySaved }, 'Copiar para Claude'),
+        h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', 'data-tip': L.clearConfirm ? 'Otra vez para borrar' : 'Borra todas las ★', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar?' : 'Vaciar')));
     }
 
     if (!list.length) {

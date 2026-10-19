@@ -1,0 +1,130 @@
+/* Botones: pill buttons + tooltip that pours out of the button.
+   Tune with these variables on any ancestor (or :root):
+   --pour-gap (10px) space to the button · --pour-radius (10px) tooltip corners
+   --pour-color / --pour-text: tooltip colors, set on the button (defaults: its background / white)
+   --pour-tip-size (13px) · --pour-tip-h (32px) · --pour-tip-px (12px)
+   --pour-in (460ms) pour out · --pour-move (320ms) slide between buttons
+   --pour-room (64px) room the liquid layer gets on the tooltip side */
+
+/* A toolbar of buttons */
+.pour { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Buttons: solid, high contrast, fully rounded, so they read as tappable */
+.pour-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #141414;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color .15s ease, transform .15s ease;
+}
+.pour-btn.icon { width: 40px; padding: 0; }
+.pour-btn svg { width: 16px; height: 16px; flex: none; }
+.pour-btn:hover { background: #000; }
+/* Press feedback moves the button; it never scales or distorts its icon or logo */
+.pour-btn:active { transform: translateY(1px); }
+.pour-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+/* Added by the script to every group */
+.pour-group { position: relative; isolation: isolate; }
+/* Buttons sit above the liquid layer (they need a position; .pour-btn has one) */
+:where(.pour-group [data-tip]) { z-index: 1; }
+.pour-solo { display: inline-flex; vertical-align: middle; }
+
+/* Liquid layer (behind the buttons): the active button's shape + the tooltip body */
+/* It reaches --pour-room past the group on the tooltip's side, so the filter never cuts the
+   tooltip off; it only grows upwards (or downwards inside the group's box for "below"),
+   which never adds page scroll */
+.pour-goo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--pour-room, 64px) * -1);
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  filter: url(#pour-goo);
+  overflow: visible;
+}
+[data-pour~="below"] > .pour-goo { top: 0; bottom: calc(var(--pour-room, 64px) * -1); }
+.pour-src, .pour-bg {
+  position: absolute;
+  left: 0;
+  top: var(--pour-room, 64px);
+  background: var(--pour-color, #141414);
+  will-change: transform, width, height;
+}
+[data-pour~="below"] > .pour-goo > .pour-src, [data-pour~="below"] > .pour-goo > .pour-bg { top: 0; }
+.pour-src { opacity: 0; }
+.pour-bg {
+  border-radius: var(--pour-radius, 10px);
+  opacity: 0;
+  transition: transform var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), width var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), height var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), opacity .2s ease .25s;
+}
+.pour-on > .pour-goo > .pour-src { opacity: 1; }
+.pour-on > .pour-goo > .pour-bg { opacity: 1; transition: transform var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), width var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), height var(--pour-in, 460ms) cubic-bezier(0.22, 1, 0.36, 1), opacity 0s; }
+/* Moving between buttons: a quicker slide and resize */
+.pour-on > .pour-goo > .pour-bg.moving { transition-duration: var(--pour-move, 320ms); }
+.pour-snap > .pour-goo > .pour-bg, .pour-snap > .pour-tip { transition: none !important; }
+
+/* Tooltip text sits above everything and is never blurred by the liquid filter */
+/* Child selectors so a site rule like `.toolbar span` can't restyle it */
+.pour-group > .pour-tip {
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  background: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  height: var(--pour-tip-h, 32px);
+  padding: 0 var(--pour-tip-px, 12px);
+  font-family: inherit;
+  font-size: var(--pour-tip-size, 13px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pour-text, #fff);
+  white-space: nowrap;
+  transition: transform var(--pour-move, 320ms) cubic-bezier(0.22, 1, 0.36, 1), width var(--pour-move, 320ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pour-group > .pour-measure { visibility: hidden; position: absolute; left: -9999px; top: 0; display: inline-flex; align-items: center; }
+.pour-tip > .pour-label {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  filter: blur(4px);
+  transition: opacity .22s ease, filter .22s ease;
+}
+.pour-tip > .pour-label.pour-in { opacity: 1; filter: blur(0); transition-delay: .06s; }
+.pour-tip > .pour-label.pour-late.pour-in { transition-delay: .2s; } /* first appearance: wait for the drop to rise */
+.pour-tip > .pour-label.pour-out { opacity: 0; filter: blur(4px); transition-delay: 0s; transition-duration: .16s; }
+
+/* Less motion when the system asks for it (Windows "Animation effects" off): a short pour,
+   and the tooltip jumps between buttons instead of sliding */
+@media (prefers-reduced-motion: reduce) {
+  .pour-group { --pour-in: 220ms; --pour-move: 0ms; }
+  .pour-tip > .pour-label { filter: none !important; }
+}

@@ -11,7 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=20261018-4">
+<link rel="stylesheet" href="styles.css?v=20261019-1">
+<link rel="stylesheet" href="botones.css?v=20261019-1">
 </head>
 <body>
 
@@ -49,9 +50,9 @@
       <div class="frow scroll-row" id="d-ideas"></div>
       <div class="frow scroll-row" id="d-links"></div>
     </div>
-    <div class="live-head" id="live-head">
+    <div class="live-head" id="live-head" data-pour="contain">
       <p class="meta" id="live-meta"></p>
-      <button class="btn sm solid" type="button" id="live-shuffle">Otra tanda</button>
+      <button class="btn sm solid" type="button" id="live-shuffle" data-tip="Webs que no viste">Otra tanda</button>
     </div>
     <div class="saved-bar" id="saved-bar" hidden></div>
     <div class="filters" id="live-filters"></div>
@@ -69,7 +70,7 @@
       </div>
       <div class="mix-out">
         <div class="codebox">
-          <div class="codebox-head"><span>Prompt</span><div class="head-actions"><button class="btn sm ghost" type="button" id="mix-reset">Reset</button><button class="btn sm solid" type="button" id="mix-copy">Copiar</button></div></div>
+          <div class="codebox-head"><span>Prompt</span><div class="head-actions" data-pour="below"><button class="btn sm ghost" type="button" id="mix-reset" data-tip="Borra toda la mezcla">Reset</button><button class="btn sm solid" type="button" id="mix-copy" data-tip="Para pegarle a Claude">Copiar</button></div></div>
           <pre id="mix-out"></pre>
         </div>
       </div>
@@ -84,11 +85,11 @@
 <div class="sheet" id="sheet" hidden>
   <div class="sheet-scrim" id="sheet-scrim"></div>
   <div class="sheet-panel" id="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-head">
+    <div class="sheet-head" data-pour="below contain">
       <span class="sheet-title" id="sheet-title"></span>
-      <button class="btn sm ghost" type="button" id="sheet-prev" aria-label="Anterior">←</button>
-      <button class="btn sm ghost" type="button" id="sheet-next" aria-label="Siguiente">→</button>
-      <button class="btn sm" type="button" id="sheet-close" aria-label="Cerrar">✕</button>
+      <button class="btn sm ghost icon" type="button" id="sheet-prev" aria-label="Anterior" data-tip="Anterior">←</button>
+      <button class="btn sm ghost icon" type="button" id="sheet-next" aria-label="Siguiente" data-tip="Siguiente">→</button>
+      <button class="btn sm icon" type="button" id="sheet-close" aria-label="Cerrar" data-tip="Cerrar · Esc">✕</button>
     </div>
     <div class="sheet-body" id="sheet-body"></div>
   </div>
@@ -103,7 +104,8 @@
 </dialog>
 
 <!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
-<script src="data.js?v=20261018-4"></script>
-<script src="app.js?v=20261018-4"></script>
+<script src="data.js?v=20261019-1"></script>
+<script src="botones.js?v=20261019-1"></script>
+<script src="app.js?v=20261019-1"></script>
 </body>
 </html>
