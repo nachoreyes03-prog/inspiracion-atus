@@ -8,6 +8,9 @@ on:
       paginas:
         description: "Páginas a leer de Minimal Gallery y One Page Love (10 webs cada una). Poné 100 para traer las viejas."
         default: "2"
+      rubros_todos:
+        description: "Poné 1 para buscar todos los rubros ahora (si no, va de a 16 por vez)"
+        default: "0"
 
 permissions:
   contents: write
@@ -30,6 +33,7 @@ jobs:
         run: node scripts/fetch-live.mjs
         env:
           PAGES: ${{ inputs.paginas || '2' }}
+          RUBROS_ALL: ${{ inputs.rubros_todos || '0' }}
 
       - name: Guardar si hay novedades
         run: |

@@ -22,110 +22,61 @@
       <button class="tab" role="tab" type="button" data-tab="refs" aria-controls="view-refs">Referencias <span class="n" id="n-refs"></span></button>
       <button class="tab" role="tab" type="button" data-tab="discover" aria-controls="view-discover">Descubrir <span class="n" id="n-live"></span></button>
       <button class="tab" role="tab" type="button" data-tab="mix" aria-controls="view-mix">Mezclar <span class="n" id="n-mix"></span></button>
-      <button class="tab" role="tab" type="button" data-tab="sources" aria-controls="view-sources">Fuentes <span class="n" id="n-sources"></span></button>
-      <button class="tab" role="tab" type="button" data-tab="taste" aria-controls="view-taste">Tu gusto</button>
+      <button class="tab" role="tab" type="button" data-tab="taste" aria-controls="view-taste">Gusto</button>
     </nav>
   </div>
 </header>
 
 <main>
   <section class="view wrap" id="view-refs" role="tabpanel" aria-label="Referencias">
-    <div class="intro">
-      <h1 class="statement">Lo que me gusta, por qué me gusta y cómo pedirlo.</h1>
-      <p class="meta" id="meta"></p>
-    </div>
     <div class="toolbar">
       <div class="search">
-        <label class="vh" for="q">Buscar referencias</label>
-        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá por rubro, fuente, color, estilo o nota">
-        <span class="hint" aria-hidden="true">/ para buscar</span>
+        <label class="vh" for="q">Buscar</label>
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá: dentista, portfolio, lima…">
       </div>
-      <div class="filters" id="filters"></div>
-      <div class="results" id="results" aria-live="polite"></div>
+      <div class="frow scroll-row" id="filters"></div>
     </div>
     <div class="grid" id="grid"></div>
-    <footer class="foot">
-      <p>Para sumar una referencia, pedíselo a Claude o agregala en <code>data.js</code> con su captura en <code>img/</code>. Los pasos están en el README.</p>
-    </footer>
+    <section class="also" id="ref-live" hidden></section>
   </section>
 
   <section class="view wrap" id="view-discover" role="tabpanel" aria-label="Descubrir" hidden>
-    <div class="view-head">
-      <div>
-        <h1>Descubrir</h1>
-        <p>Buscá en las galerías que usás y explorá miles de webs que publicaron, actualizadas cada 6 horas.</p>
-      </div>
-    </div>
-    <div class="disc">
+    <div class="toolbar">
       <div class="search">
-        <label class="vh" for="dq">Buscar en las galerías</label>
-        <input id="dq" type="search" autocomplete="off" spellcheck="false" placeholder="Probá: dark portfolio, architecture, big type">
+        <label class="vh" for="dq">Buscar un rubro</label>
+        <input id="dq" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá un rubro: dentista, restaurante, hotel…">
       </div>
-      <div class="frow" id="d-ideas"></div>
-      <div class="gal-links" id="d-links"></div>
+      <div class="frow scroll-row" id="d-ideas"></div>
+      <div class="frow scroll-row" id="d-links"></div>
     </div>
     <div class="live-head" id="live-head">
-      <div>
-        <h2>En vivo</h2>
-        <p class="meta" id="live-meta"></p>
-      </div>
-      <div class="live-actions">
-        <button class="btn solid" type="button" id="live-shuffle">Otra tanda</button>
-      </div>
+      <p class="meta" id="live-meta"></p>
+      <button class="btn sm solid" type="button" id="live-shuffle">Otra tanda</button>
     </div>
     <div class="saved-bar" id="saved-bar" hidden></div>
-    <div class="filters live-filters" id="live-filters"></div>
+    <div class="filters" id="live-filters"></div>
     <div class="grid" id="live-grid"></div>
     <div class="live-more"><button class="btn" type="button" id="live-more" hidden>Ver más</button></div>
   </section>
 
   <section class="view wrap" id="view-mix" role="tabpanel" aria-label="Mezclar" hidden>
-    <div class="view-head">
-      <div>
-        <h1>Mezclar referencias</h1>
-        <p>Elegí dos o más webs, decidí qué tomás de cada una y copiá un prompt listo para pedir el diseño.</p>
-      </div>
-    </div>
     <div class="mix">
       <div class="mix-col">
-        <div class="block">
-          <h2 class="field-lbl">Referencias</h2>
-          <div class="picker" id="mix-picker"></div>
-        </div>
-        <label class="fld"><span>Qué vas a diseñar</span><input class="in" id="mix-what" autocomplete="off" placeholder="La web de un estudio de arquitectura en Buenos Aires"></label>
-        <label class="fld"><span>Secciones (opcional)</span><input class="in" id="mix-sections" autocomplete="off" placeholder="Inicio, proyectos, estudio, contacto"></label>
-        <div class="block">
-          <h2 class="field-lbl">Qué tomás de cada una</h2>
-          <div class="aspects" id="mix-aspects"></div>
-        </div>
-        <label class="check"><input type="checkbox" id="mix-taste" checked> Sumar tu perfil de gusto al prompt</label>
+        <div class="picker" id="mix-picker"></div>
+        <label class="fld"><span>Qué vas a diseñar</span><input class="in" id="mix-what" autocomplete="off" placeholder="La web de un estudio de arquitectura"></label>
+        <div class="aspects" id="mix-aspects"></div>
+        <label class="check"><input type="checkbox" id="mix-taste" checked> Sumar mi gusto</label>
       </div>
       <div class="mix-out">
         <div class="codebox">
-          <div class="codebox-head"><span>Prompt</span><button class="btn sm solid" type="button" id="mix-copy">Copiar prompt</button></div>
+          <div class="codebox-head"><span>Prompt</span><button class="btn sm solid" type="button" id="mix-copy">Copiar</button></div>
           <pre id="mix-out"></pre>
         </div>
       </div>
     </div>
   </section>
 
-  <section class="view wrap" id="view-sources" role="tabpanel" aria-label="Fuentes" hidden>
-    <div class="view-head">
-      <div>
-        <h1>Dónde buscar</h1>
-        <p>Las páginas donde encontrás referencias y para qué sirve cada una.</p>
-      </div>
-    </div>
-    <ul class="src-list" id="src-list"></ul>
-  </section>
-
-  <section class="view wrap" id="view-taste" role="tabpanel" aria-label="Tu gusto" hidden>
-    <div class="view-head">
-      <div>
-        <h1>Tu gusto</h1>
-        <p>Lo que se repite en tus referencias. Pegá el brief antes de pedir un diseño.</p>
-      </div>
-    </div>
+  <section class="view wrap" id="view-taste" role="tabpanel" aria-label="Gusto" hidden>
     <div class="taste" id="taste-body"></div>
   </section>
 </main>
@@ -135,9 +86,9 @@
   <div class="sheet-panel" id="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-head">
       <span class="sheet-title" id="sheet-title"></span>
-      <button class="btn sm ghost" type="button" id="sheet-prev" aria-label="Referencia anterior">←</button>
-      <button class="btn sm ghost" type="button" id="sheet-next" aria-label="Referencia siguiente">→</button>
-      <button class="btn sm" type="button" id="sheet-close">Cerrar</button>
+      <button class="btn sm ghost" type="button" id="sheet-prev" aria-label="Anterior">←</button>
+      <button class="btn sm ghost" type="button" id="sheet-next" aria-label="Siguiente">→</button>
+      <button class="btn sm" type="button" id="sheet-close" aria-label="Cerrar">✕</button>
     </div>
     <div class="sheet-body" id="sheet-body"></div>
   </div>

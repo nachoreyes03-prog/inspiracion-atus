@@ -1,4 +1,4 @@
-// Inspiración Atus: static version. All content comes from data.js (window.ATUS_DATA).
+// Inspiración Atus: static site. Content comes from data.js (window.ATUS_DATA) and live.js (window.ATUS_LIVE).
 (() => {
   'use strict';
 
@@ -32,6 +32,7 @@
 
   const norm = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const pad = n => String(n).padStart(2, '0');
+  const fmtN = n => n.toLocaleString('es-AR');
   const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return String(u || '').replace(/^https?:\/\/(www\.)?/i, '').replace(/\/.*$/, ''); } };
   const safeHref = u => (/^https?:\/\//i.test(u || '') ? u : null);
   const imgSrc = p => encodeURI(String(p || ''));
@@ -46,20 +47,103 @@
   const fontName = s => String(s || '').split(/\s+[—–]\s+|\s+-\s+/)[0].trim();
   const arr = v => Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()) : (typeof v === 'string' && v.trim() ? [v] : []);
   const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const fmtDate = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1].slice(2)}` : ''; };
   const isTyping = el => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + String(d.getFullYear()).slice(2); };
+  const ago = iso => {
+    const t = Date.parse(iso);
+    if (!t) return '';
+    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (m < 60) return `hace ${m || 1} min`;
+    const hrs = Math.round(m / 60);
+    if (hrs < 24) return `hace ${hrs} h`;
+    const d = Math.round(hrs / 24);
+    return d === 1 ? 'ayer' : `hace ${d} días`;
+  };
 
   /* ---------- data ---------- */
   const DATA = window.ATUS_DATA || null;
-  const seen = new Set();
+  const seenIds = new Set();
   const REFS = (DATA && Array.isArray(DATA.refs) ? DATA.refs : []).filter(r => r && r.name).map((r, i) => {
     let id = String(r.id || slug(r.name) || 'ref-' + i);
-    while (seen.has(id)) id += '-' + i;
-    seen.add(id);
-    return Object.assign({}, r, { id, _i: i });
+    while (seenIds.has(id)) id += '-' + i;
+    seenIds.add(id);
+    return Object.assign({}, r, { id });
   });
-  const SOURCES = (DATA && Array.isArray(DATA.sources) ? DATA.sources : []).filter(s => s && s.name);
   const TASTE = DATA && DATA.taste ? DATA.taste : null;
+
+  /* ---------- search: a rubro in Spanish or English, ranked ---------- */
+  // Spanish words → the English terms the galleries use. English words find their row too.
+  const SYN = {
+    dentista: ['dentist', 'dental', 'orthodont', 'teeth', 'smile', 'zahnarzt'], odontologia: ['dentist', 'dental', 'orthodont'], ortodoncia: ['orthodont', 'dental', 'dentist'],
+    clinica: ['clinic', 'medical', 'health', 'doctor', 'care', 'praxis'], medico: ['doctor', 'medical', 'clinic', 'health'], salud: ['health', 'medical', 'wellness', 'care'],
+    hospital: ['hospital', 'medical', 'health'], farmacia: ['pharmacy', 'pharma'], psicologo: ['psycholog', 'therap', 'mental health', 'counsel'], terapia: ['therap', 'wellness'],
+    veterinaria: ['veterinar', 'vet', 'pet', 'animal'], mascota: ['pet', 'dog', 'cat'],
+    abogado: ['lawyer', 'law', 'legal', 'attorney'], legal: ['legal', 'law', 'lawyer'],
+    restaurante: ['restaurant', 'food', 'dining', 'bistro', 'kitchen', 'eatery'], comida: ['food', 'restaurant', 'recipe', 'kitchen'],
+    cafe: ['coffee', 'cafe', 'roaster'], cafeteria: ['coffee', 'cafe'], panaderia: ['bakery', 'bread', 'pastry'], pasteleria: ['pastry', 'patisserie', 'bakery', 'cake'],
+    bar: ['bar', 'cocktail', 'pub'], vino: ['wine', 'winery', 'vineyard'], cerveza: ['beer', 'brewery', 'brewing'],
+    hotel: ['hotel', 'hospitality', 'resort', 'stay', 'inn'], viaje: ['travel', 'tourism', 'trip', 'tour'], turismo: ['tourism', 'travel', 'tour'],
+    inmobiliaria: ['real estate', 'property', 'homes', 'apartment', 'residential'], arquitectura: ['architect'], arquitecto: ['architect'],
+    interiorismo: ['interior'], interiores: ['interior'], construccion: ['construction', 'builder', 'building'], mueble: ['furniture'],
+    gimnasio: ['gym', 'fitness', 'training', 'workout'], fitness: ['fitness', 'gym', 'training'], yoga: ['yoga', 'pilates'], deporte: ['sport', 'athlet', 'fitness'], spa: ['spa', 'wellness', 'massage'],
+    belleza: ['beauty', 'salon', 'skincare', 'cosmetic', 'makeup'], peluqueria: ['hair', 'salon', 'barber'], barberia: ['barber', 'hair'], cosmetica: ['cosmetic', 'skincare', 'beauty'],
+    moda: ['fashion', 'apparel', 'clothing', 'wear'], ropa: ['clothing', 'apparel', 'fashion', 'wear'], joyeria: ['jewel'], zapatilla: ['shoe', 'sneaker', 'footwear'],
+    fotografia: ['photograph'], fotografo: ['photograph'], cine: ['film', 'movie', 'cinema'], pelicula: ['film', 'movie', 'cinema'],
+    musica: ['music', 'musician', 'band', 'record', 'album'], musico: ['musician', 'music', 'band'], banda: ['band', 'music'],
+    festival: ['festival', 'event'], evento: ['event', 'conference', 'festival'], boda: ['wedding'], conferencia: ['conference', 'summit', 'event'],
+    museo: ['museum', 'exhibition', 'gallery'], arte: ['art', 'artist', 'gallery'], artista: ['artist', 'art'],
+    escuela: ['school', 'education', 'academy'], universidad: ['university', 'college', 'education'], educacion: ['education', 'course', 'learning', 'school'], curso: ['course', 'learning', 'academy'],
+    nino: ['kids', 'children', 'baby'], ong: ['nonprofit', 'charity', 'foundation'], fundacion: ['foundation', 'nonprofit', 'charity'],
+    revista: ['magazine', 'editorial', 'journal'], libro: ['book', 'author', 'publish'], editorial: ['editorial', 'publish', 'magazine'], podcast: ['podcast'],
+    auto: ['car', 'automotive', 'vehicle'], bici: ['bike', 'bicycle', 'cycling'], flor: ['florist', 'flower'], jardin: ['garden', 'plant', 'landscape'], planta: ['plant', 'garden'],
+    energia: ['energy', 'solar', 'power'], agencia: ['agency', 'studio'], estudio: ['studio', 'agency'], portfolio: ['portfolio', 'personal', 'designer'], portafolio: ['portfolio', 'personal'],
+    disenador: ['designer', 'portfolio'], startup: ['startup', 'saas'], app: ['app', 'mobile'], ia: ['ai', 'artificial intelligence', 'machine learning'],
+    tecnologia: ['tech', 'software', 'technology'], software: ['software', 'saas', 'tech'], banco: ['bank', 'finance', 'fintech'], finanzas: ['finance', 'fintech', 'bank', 'invest'],
+    inversion: ['invest', 'venture', 'capital', 'fund'], seguro: ['insurance'], contador: ['accounting', 'tax'], consultora: ['consult'],
+    tienda: ['shop', 'store', 'ecommerce'], ecommerce: ['ecommerce', 'shop', 'store'], juego: ['game', 'gaming'], videojuego: ['game', 'gaming'],
+    logistica: ['logistics', 'shipping', 'delivery'], fabrica: ['manufactur', 'factory', 'industrial'],
+  };
+  const SYN_KEYS = Object.keys(SYN);
+  const singular = w => (w.length > 4 && /s$/.test(w) ? w.replace(/(es|s)$/, '') : w);
+
+  // Each word becomes a group of terms: the word itself first, then its close relatives
+  function parseQuery(q) {
+    return norm(q).split(/[\s,]+/).filter(t => t.length > 1).map(w => {
+      const key = SYN[w] ? w : SYN[singular(w)] ? singular(w) : null;
+      if (key) return { main: [w, SYN[key][0]], alts: SYN[key] };
+      const row = SYN_KEYS.find(k => SYN[k].some(a => a === w || (w.length >= 5 && (a.startsWith(w) || w.startsWith(a)))));
+      return { main: [w], alts: row ? SYN[row] : [] };
+    });
+  }
+  // Fields are normalized text with a leading space so terms match at the start of a word
+  const field = (...parts) => ' ' + norm(parts.flat().join(' '));
+  // A related word only counts in the name, categories or rubro tags; in the description it's too weak
+  function matchScore(f, groups) {
+    let total = 0;
+    for (const g of groups) {
+      let best = 0;
+      const tryTerm = (t, w) => {
+        const s = ' ' + t;
+        if (f.q.includes(s)) best = Math.max(best, 9 * w);
+        if (f.name.includes(s)) best = Math.max(best, 7 * w);
+        if (f.cats.includes(s)) best = Math.max(best, 6 * w);
+        if (f.desc.includes(s)) best = Math.max(best, 3 * w);
+        if (f.extra.includes(s)) best = Math.max(best, 3 * w);
+      };
+      for (const t of g.main) tryTerm(t, 1);
+      for (const t of g.alts) tryTerm(t, 0.6);
+      if (best < 3) return 0;
+      total += best;
+    }
+    return total;
+  }
+
+  REFS.forEach(r => {
+    r._f = {
+      q: '', name: field(r.name, r.rubro), cats: field(arr(r.tags), r.rubro),
+      desc: field(r.likes, r.dna, r.layout, r.avoid), extra: field(arr(r.fonts), arr(r.palette), r.motion, r.stack, r.url, r.atus ? 'atus' : ''),
+    };
+  });
 
   /* ---------- state ---------- */
   const S = {
@@ -76,9 +160,8 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastT);
-    toastT = setTimeout(() => t.classList.remove('show'), 2400);
+    toastT = setTimeout(() => t.classList.remove('show'), 2000);
   }
-
   function copy(text, done) {
     if (!text) return;
     let p = null;
@@ -97,30 +180,15 @@
     if (ok) toast(done || 'Copiado');
     else openCopySheet(text);
   }
-
   function restoreFocus(key) {
     if (!key) return;
     const el = document.querySelector('[data-key="' + CSS.escape(key) + '"]');
     if (el) el.focus();
   }
-  function notice(title, text) {
-    return h('div', { class: 'notice' }, h('h2', null, title), text ? h('p', null, text) : null);
-  }
+  const notice = (title, text) => h('div', { class: 'notice' }, h('h2', null, title), text ? h('p', null, text) : null);
+  const chip = (label, pressed, onclick, key) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(!!pressed), 'data-key': key, onclick: () => { onclick(); restoreFocus(key); } }, label);
 
-  /* ---------- queries ---------- */
-  const haystack = r => norm([r.name, r.url, r.rubro, arr(r.tags).join(' '), r.likes, r.avoid, arr(r.fonts).join(' '), arr(r.palette).join(' '), r.layout, r.motion, r.stack, r.dna, r.prompt, r.atus ? 'atus' : ''].join(' '));
-  function visibleRefs() {
-    const terms = norm(S.q).split(/\s+/).filter(Boolean);
-    return REFS.filter(r => {
-      if (S.atusOnly && !r.atus) return false;
-      if (S.rubro && r.rubro !== S.rubro) return false;
-      if (S.tag && !arr(r.tags).includes(S.tag)) return false;
-      if (!terms.length) return true;
-      const hs = haystack(r);
-      return terms.every(t => hs.includes(t));
-    });
-  }
-
+  /* ---------- prompts ---------- */
   function buildPrompt(r) {
     const L = [`Diseñá una web con la dirección visual de ${r.name}${r.url ? ` (${host(r.url)})` : ''}.`];
     if (r.rubro) L.push(`Rubro de la referencia: ${r.rubro}.`);
@@ -128,8 +196,7 @@
     const p = arr(r.palette); if (p.length) L.push(`Paleta: ${p.join(', ')}.`);
     if (r.layout) L.push(`Layout: ${r.layout}`);
     if (r.motion) L.push(`Movimiento: ${r.motion}`);
-    if (r.likes) L.push(`Lo que la hace buena: ${r.likes}`);
-    else if (r.dna) L.push(`Lo que la hace buena: ${r.dna}`);
+    if (r.likes || r.dna) L.push(`Lo que la hace buena: ${r.likes || r.dna}`);
     if (r.avoid) L.push(`Evitar: ${r.avoid}`);
     L.push('Adaptalo a: [describí tu proyecto acá].');
     return L.join('\n');
@@ -137,8 +204,8 @@
   const promptOf = r => (typeof r.prompt === 'string' && r.prompt.trim()) ? r.prompt.trim() : buildPrompt(r);
 
   /* ---------- tabs + url ---------- */
-  const TABS = ['refs', 'discover', 'mix', 'sources', 'taste'];
-  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', sources: 'fuentes', taste: 'gusto' };
+  const TABS = ['refs', 'discover', 'mix', 'taste'];
+  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', taste: 'gusto' };
   const tabFromHash = hash => TABS.find(t => '#' + TAB_HASH[t] === hash) || null;
   const setHash = hash => { try { history.replaceState(history.state, '', hash); } catch { /* file:// quirks */ } };
 
@@ -153,7 +220,7 @@
     if (!opts || opts.scroll !== false) window.scrollTo(0, 0);
   }
 
-  /* ---------- render ---------- */
+  /* ---------- references ---------- */
   function render() {
     renderCounts();
     renderFilters();
@@ -165,19 +232,8 @@
   function renderCounts() {
     $('#n-refs').textContent = pad(REFS.length);
     $('#n-mix').textContent = S.mix.size ? pad(S.mix.size) : '';
-    $('#n-sources').textContent = pad(SOURCES.length);
-    const fresh = liveAll().filter(i => Date.now() - Date.parse(i.date) < 7 * 864e5).length;
-    $('#n-live').textContent = fresh ? pad(fresh) : '';
-    const updated = DATA && fmtDate(DATA.updated);
-    put($('#meta'),
-      h('span', null, h('b', null, pad(REFS.length)), ' referencias'),
-      h('span', null, h('b', null, pad(REFS.filter(r => r.atus).length)), ' para Atus'),
-      h('span', null, h('b', null, pad(SOURCES.length)), ' fuentes'),
-      updated ? h('span', null, 'actualizado ', h('b', null, updated)) : null);
-  }
-
-  function chip(label, pressed, onclick, key) {
-    return h('button', { type: 'button', class: 'chip', 'aria-pressed': String(!!pressed), 'data-key': key, onclick: () => { onclick(); restoreFocus(key); } }, label);
+    const fresh = liveAll().filter(i => Date.now() - i._t < 7 * 864e5).length;
+    $('#n-live').textContent = fresh ? fmtN(fresh) : '';
   }
 
   function renderFilters() {
@@ -186,41 +242,37 @@
     const rubros = [...new Set(REFS.map(r => r.rubro).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'es'));
     const counts = new Map();
     for (const r of REFS) for (const t of arr(r.tags)) counts.set(t, (counts.get(t) || 0) + 1);
-    const tags = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es')).slice(0, 18);
+    const tags = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es')).slice(0, 14).map(([t]) => t);
     const atusN = REFS.filter(r => r.atus).length;
     put(box,
-      h('div', { class: 'frow' },
-        h('span', { class: 'lbl' }, 'Ver'),
-        chip('Todas', !S.atusOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
-        atusN ? chip(['Para Atus', h('span', { class: 'c' }, pad(atusN))], S.atusOnly, () => { S.atusOnly = !S.atusOnly; render(); }, 'f:atus') : null,
-        rubros.length ? h('span', { class: 'sep', 'aria-hidden': 'true' }) : null,
-        rubros.map(rb => chip(rb, S.rubro === rb, () => { S.rubro = S.rubro === rb ? null : rb; render(); }, 'f:r:' + rb))),
-      tags.length ? h('div', { class: 'frow' },
-        h('span', { class: 'lbl' }, 'Estilo'),
-        tags.map(([t, c]) => chip([t, h('span', { class: 'c' }, c)], S.tag === t, () => { S.tag = S.tag === t ? null : t; render(); }, 'f:t:' + t))) : null);
+      chip('Todas', !S.atusOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
+      atusN ? chip('Para Atus', S.atusOnly, () => { S.atusOnly = !S.atusOnly; render(); }, 'f:atus') : null,
+      rubros.map(rb => chip(rb, S.rubro === rb, () => { S.rubro = S.rubro === rb ? null : rb; render(); }, 'f:r:' + rb)),
+      h('span', { class: 'sep', 'aria-hidden': 'true' }),
+      tags.map(t => chip('#' + t, S.tag === t, () => { S.tag = S.tag === t ? null : t; render(); }, 'f:t:' + t)));
   }
 
-  function clearFilters() {
-    S.q = ''; $('#q').value = '';
-    S.atusOnly = false; S.rubro = null; S.tag = null;
-    render();
-    $('#q').focus();
+  function visibleRefs() {
+    let list = REFS.filter(r => (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
+    const groups = parseQuery(S.q);
+    if (!groups.length) return list;
+    return list.map(r => [r, matchScore(r._f, groups)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([r]) => r);
   }
 
-  function placeholder(r) {
-    const hexes = arr(r.palette).map(hexOf).filter(Boolean);
-    const el = h('span', { class: 'ph' }, h('span', { class: 'ph-name' }, r.name || ''));
+  function placeholder(name, palette) {
+    const hexes = arr(palette).map(hexOf).filter(Boolean);
+    const el = h('span', { class: 'ph' }, h('span', { class: 'ph-name' }, name || ''));
     if (hexes[0]) el.style.background = hexes[0];
     if (hexes[1]) el.style.color = hexes[1];
     return el;
   }
 
-  function card(r) {
+  function refCard(r) {
     const shots = arr(r.shots);
     let imgA = null, imgB = null;
     if (shots[0]) {
       imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async' });
-      imgA.addEventListener('error', () => imgA.replaceWith(placeholder(r)), { once: true });
+      imgA.addEventListener('error', () => imgA.replaceWith(placeholder(r.name, r.palette)), { once: true });
     }
     if (shots[1]) {
       imgB = h('img', { class: 'alt', src: imgSrc(shots[1]), alt: '', loading: 'lazy', decoding: 'async' });
@@ -229,20 +281,16 @@
     const inMix = S.mix.has(r.id);
     const hexes = arr(r.palette).map(hexOf).filter(Boolean).slice(0, 6);
     const fonts = arr(r.fonts).map(fontName).filter(Boolean);
-    const blurb = r.likes || r.dna;
     return h('article', { class: 'card' },
       h('button', { class: 'shot', type: 'button', 'aria-label': 'Ver ' + r.name, 'data-key': 'card:' + r.id, onclick: e => openDetail(r.id, e.currentTarget) },
-        imgA || placeholder(r), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : null),
-      h('div', { class: 'card-head' },
-        h('h3', null, r.name),
-        r.url ? h('span', { class: 'dom' }, host(r.url)) : null),
+        imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : null),
+      h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, host(r.url)) : null),
       (hexes.length || fonts.length) ? h('div', { class: 'card-dna' },
-        hexes.length ? h('span', { class: 'sws', title: hexes.join(' ') }, hexes.map(x => h('i', { style: { background: x } }))) : null,
+        hexes.length ? h('span', { class: 'sws' }, hexes.map(x => h('i', { style: { background: x } }))) : null,
         fonts.length ? h('span', { class: 'fonts' }, fonts.join(' · ')) : null) : null,
-      blurb ? h('p', { class: 'likes' + (r.likes ? '' : ' dna') }, blurb) : null,
       h('div', { class: 'card-actions' },
-        h('button', { class: 'btn sm', type: 'button', onclick: () => copy(promptOf(r), 'Prompt de ' + r.name + ' copiado') }, 'Copiar prompt'),
-        h('button', { class: 'btn sm ' + (inMix ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'card-mix:' + r.id, onclick: () => toggleMix(r.id, 'card-mix:' + r.id) }, inMix ? '✓ En la mezcla' : '+ Mezcla')));
+        h('button', { class: 'btn sm', type: 'button', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
+        h('button', { class: 'btn sm ' + (inMix ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'card-mix:' + r.id, onclick: () => toggleMix(r.id, 'card-mix:' + r.id) }, inMix ? '✓ Mezcla' : '+ Mezcla')));
   }
 
   const cardCache = new Map();
@@ -250,7 +298,7 @@
     const sig = String(S.mix.has(r.id));
     const c = cardCache.get(r.id);
     if (c && c.sig === sig) return c.el;
-    const el = card(r);
+    const el = refCard(r);
     cardCache.set(r.id, { sig, el });
     return el;
   }
@@ -260,30 +308,30 @@
   }
 
   function renderGrid() {
-    const grid = $('#grid'), info = $('#results');
-    if (!DATA) {
-      put(info);
-      put(grid, notice('No encontré los datos', 'Falta el archivo data.js al lado de index.html, o tiene un error. Revisalo y recargá la página.'));
-      return;
-    }
-    if (!REFS.length) {
-      put(info);
-      put(grid, notice('Todavía no hay referencias', 'Agregá la primera en data.js (los pasos están en el README) o pedíselo a Claude.'));
-      return;
-    }
+    const grid = $('#grid');
+    if (!DATA) { put(grid, notice('No encontré data.js', 'Tiene que estar al lado de index.html.')); return; }
     const list = visibleRefs();
-    const filtered = list.length !== REFS.length;
-    put(info,
-      h('span', null, h('b', null, pad(list.length)), ' de ' + pad(REFS.length)),
-      filtered ? h('button', { class: 'linkish', type: 'button', onclick: clearFilters }, 'Limpiar filtros') : null);
-    if (!list.length) {
-      put(grid, S.q
-        ? notice(`Nada coincide con “${S.q}”`, 'Probá con otra palabra: un rubro, una fuente, un color en hex o algo de tus notas.')
-        : notice('Ninguna referencia con esos filtros', 'Sacá algún filtro para ver más.'));
-      return;
+    if (!list.length) put(grid, notice(S.q ? `Ninguna referencia con “${S.q}”` : 'Ninguna con esos filtros', null));
+    else {
+      if (grid.querySelector('.notice')) put(grid);
+      reconcile(grid, list.map(getCard));
     }
-    if (grid.querySelector('.notice')) put(grid);
-    reconcile(grid, list.map(getCard));
+    renderRefLive();
+  }
+
+  // Under your references, the best sites from the galleries for the same search
+  function renderRefLive() {
+    const box = $('#ref-live');
+    const q = S.q.trim();
+    if (q.length < 3) { box.hidden = true; return; }
+    if (L.status !== 'ready') { loadLive(); box.hidden = true; return; }
+    const hits = rankLive(liveAll(), parseQuery(q));
+    box.hidden = false;
+    put(box,
+      h('div', { class: 'also-head' },
+        h('h2', null, hits.length ? `${fmtN(hits.length)} webs de galerías con “${q}”` : `Nada en las galerías con “${q}”`),
+        hits.length ? h('button', { class: 'btn sm', type: 'button', onclick: () => { $('#dq').value = q; store.set('dq', q); L.shown = PAGE; setTab('discover'); } }, 'Ver todas') : null),
+      hits.length ? h('div', { class: 'grid' }, hits.slice(0, 8).map(getLiveCard)) : null);
   }
 
   function toggleMix(id, key) {
@@ -292,7 +340,7 @@
     store.set('mix', [...S.mix]);
     render();
     restoreFocus(key);
-    toast(S.mix.has(id) ? `${r.name} sumada a la mezcla (${S.mix.size})` : `${r.name} fuera de la mezcla`);
+    toast(S.mix.has(id) ? `${r.name} en la mezcla` : `${r.name} fuera de la mezcla`);
   }
 
   /* ---------- sheet ---------- */
@@ -308,7 +356,7 @@
     document.body.classList.add('locked');
     if (wasHidden) requestAnimationFrame(() => $('#sheet-close').focus());
   }
-  // Closing goes through history when the sheet pushed an entry, so the phone's back button also closes it.
+  // Closing goes through history when the sheet pushed an entry, so the phone's back button also closes it
   function requestClose() {
     if (S.pushed) history.back();
     else closeSheet();
@@ -326,20 +374,16 @@
     S.lastFocus = null;
     if (f && document.contains(f)) f.focus();
   }
-
   function openCopySheet(text) {
-    const wasOpen = !!S.sheet;
-    if (!wasOpen) S.lastFocus = document.activeElement;
+    if (!S.sheet) S.lastFocus = document.activeElement;
     S.sheet = { mode: 'copy' };
     setSheetHead('Copiar a mano', false);
     const ta = h('textarea', { class: 'in mono', rows: 16, readOnly: true, value: text });
-    put($('#sheet-body'), h('div', { class: 'detail' },
-      h('p', { class: 'prose' }, 'No pude copiar automáticamente. Seleccioná el texto y copialo (Ctrl+C, o mantené apretado en el celular).'), ta));
+    put($('#sheet-body'), h('div', { class: 'detail' }, ta));
     showSheet();
     setTimeout(() => { ta.focus(); ta.select(); }, 60);
   }
 
-  /* ---------- detail ---------- */
   const imgCache = new Map();
   function detailImg(path, alt) {
     let el = imgCache.get(path);
@@ -378,17 +422,9 @@
     if (c) S.lastFocus = c.el.querySelector('.shot');
   }
 
-  function section(label, content) {
-    return h('section', { class: 'd-sec' }, h('h3', { class: 'field-lbl' }, label), content);
-  }
-  function codebox(label, text, btnLabel, onCopy) {
-    return h('div', { class: 'codebox' },
-      h('div', { class: 'codebox-head' }, h('span', null, label), h('button', { class: 'btn sm solid', type: 'button', onclick: onCopy }, btnLabel)),
-      h('pre', null, text));
-  }
-
   function dnaList(r) {
     const rows = [];
+    if (r.dna) rows.push(['Por qué funciona', r.dna]);
     const f = arr(r.fonts);
     if (f.length) rows.push(['Tipografía', h('ul', { class: 'fontlist' }, f.map(x => h('li', null, x)))]);
     const p = arr(r.palette);
@@ -410,31 +446,30 @@
     if (!r) { requestClose(); return; }
     const list = visibleRefs();
     const pos = list.findIndex(x => x.id === r.id);
-    setSheetHead(pos >= 0 ? `${pad(pos + 1)} / ${pad(list.length)}` : 'Referencia', pos >= 0 && list.length > 1);
+    setSheetHead(pos >= 0 ? `${pad(pos + 1)} / ${pad(list.length)}` : '', pos >= 0 && list.length > 1);
     const shots = arr(r.shots);
     const inMix = S.mix.has(r.id);
     const tags = arr(r.tags);
     put($('#sheet-body'), h('article', { class: 'detail' },
-      shots.length ? h('div', { class: 'd-shots' }, detailImg(shots[0], `Captura 1 de ${r.name}`)) : null,
+      shots.length ? h('div', { class: 'd-shots' }, detailImg(shots[0], `Captura de ${r.name}`)) : null,
       h('div', { class: 'd-head' },
         h('h2', null, r.name),
         h('div', { class: 'd-sub' },
           safeHref(r.url) ? h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, host(r.url) + ' ↗') : null,
           r.rubro ? h('span', null, r.rubro) : null,
           r.atus ? h('span', { class: 'badge inline' }, 'Para Atus') : null),
-        tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
-          class: 'tag', type: 'button', title: 'Ver todas con “' + t + '”',
-          onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
-        }, t))) : null,
         h('div', { class: 'd-actions' },
           h('button', { class: 'btn solid', type: 'button', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
-          h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ En la mezcla' : '+ Sumar a la mezcla'),
-          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir sitio ↗') : null)),
-      r.likes ? section('Lo que me gusta', h('p', { class: 'quote' }, r.likes)) : null,
-      r.avoid ? section('Evitar', h('p', { class: 'prose' }, r.avoid)) : null,
-      r.dna ? section('Por qué funciona', h('p', { class: 'prose' }, r.dna)) : null,
-      codebox('Prompt para pedir algo así', promptOf(r), 'Copiar prompt', () => copy(promptOf(r), 'Prompt copiado')),
+          h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
+          safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir ↗') : null),
+        tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
+          class: 'tag', type: 'button',
+          onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
+        }, '#' + t))) : null),
+      r.likes ? h('p', { class: 'quote' }, r.likes) : null,
+      r.avoid ? h('p', { class: 'prose' }, 'Evitar: ' + r.avoid) : null,
       dnaList(r),
+      h('details', { class: 'fold' }, h('summary', null, 'Ver prompt'), h('pre', { class: 'code' }, promptOf(r))),
       shots.length > 1 ? h('div', { class: 'd-shots' }, shots.slice(1).map((p, i) => detailImg(p, `Captura ${i + 2} de ${r.name}`))) : null));
   }
 
@@ -442,7 +477,7 @@
   const ASPECTS = [
     { k: 'type', label: 'Tipografía', get: r => arr(r.fonts).join('; ') },
     { k: 'color', label: 'Paleta', get: r => arr(r.palette).join(', ') },
-    { k: 'layout', label: 'Layout y grilla', get: r => r.layout || '' },
+    { k: 'layout', label: 'Layout', get: r => r.layout || '' },
     { k: 'motion', label: 'Movimiento', get: r => r.motion || '' },
     { k: 'tone', label: 'Actitud', get: r => r.likes || r.dna || '' },
   ];
@@ -458,19 +493,21 @@
 
   function renderMix() {
     const sel = mixRefs();
-    put($('#mix-picker'), REFS.length ? REFS.map(r => {
-      const hx = arr(r.palette).map(hexOf).filter(Boolean)[0];
-      return h('button', { type: 'button', class: 'chip', 'aria-pressed': String(S.mix.has(r.id)), 'data-key': 'mix:' + r.id, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
-        hx ? h('i', { class: 'dot', style: { background: hx } }) : null, r.name);
-    }) : h('p', { class: 'muted' }, 'Todavía no hay referencias para mezclar.'));
-    if (!sel.length) {
-      put($('#mix-aspects'), h('p', { class: 'muted' }, 'Elegí al menos una referencia. Con dos o más decidís qué tomar de cada una.'));
-    } else {
+    // Picker with a preview of each site, so you can tell them apart
+    put($('#mix-picker'), REFS.map(r => {
+      const on = S.mix.has(r.id);
+      const shot = arr(r.shots)[0];
+      const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async' }) : placeholder(r.name, r.palette);
+      return h('button', { type: 'button', class: 'pick', 'aria-pressed': String(on), 'data-key': 'mix:' + r.id, title: r.name, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
+        h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, r.name));
+    }));
+    if (!sel.length) put($('#mix-aspects'));
+    else {
       put($('#mix-aspects'), ASPECTS.map((a, i) => {
         const pick = aspectPick(a, i, sel);
         const select = h('select', { class: 'in', id: 'mix-' + a.k },
-          sel.map(r => h('option', { value: r.id, disabled: !a.get(r) }, r.name + (a.get(r) ? '' : ' (sin dato)'))),
-          h('option', { value: 'none' }, 'No tomar'));
+          sel.map(r => h('option', { value: r.id, disabled: !a.get(r) }, r.name)),
+          h('option', { value: 'none' }, '—'));
         select.value = pick ? pick.id : 'none';
         select.addEventListener('change', () => { S.aspects[a.k] = select.value; store.set('aspects', S.aspects); renderMixOut(); });
         return h('div', { class: 'aspect' }, h('label', { for: 'mix-' + a.k }, a.label), h('div', { class: 'sel' }, select));
@@ -482,10 +519,8 @@
   function mixPrompt() {
     const sel = mixRefs();
     if (!sel.length) return '';
-    const what = $('#mix-what').value.trim(), sections = $('#mix-sections').value.trim(), useTaste = $('#mix-taste').checked;
-    const L = [`Diseñá ${what || '[qué vas a diseñar: por ejemplo, la web de un estudio de arquitectura]'}.`];
-    if (sections) L.push(`Secciones: ${sections}.`);
-    L.push('', sel.length > 1 ? 'Mezclá estas referencias tomando algo concreto de cada una:' : 'Usá esta referencia como dirección visual:');
+    const what = $('#mix-what').value.trim(), useTaste = $('#mix-taste').checked;
+    const L = [`Diseñá ${what || '[qué vas a diseñar]'}.`, '', sel.length > 1 ? 'Mezclá estas referencias tomando algo concreto de cada una:' : 'Usá esta referencia como dirección visual:'];
     ASPECTS.forEach((a, i) => {
       const r = aspectPick(a, i, sel);
       if (r) L.push(`- ${a.label}, de ${r.name}${r.url ? ` (${host(r.url)})` : ''}: ${a.get(r)}`);
@@ -498,135 +533,118 @@
   }
   function renderMixOut() {
     const text = mixPrompt(), out = $('#mix-out');
-    out.textContent = text || 'El prompt aparece acá cuando elegís referencias.';
+    out.textContent = text || 'Tocá las webs que querés mezclar.';
     out.classList.toggle('muted', !text);
     $('#mix-copy').disabled = !text;
   }
 
-  /* ---------- sources + taste (static) ---------- */
-  function renderSources() {
-    const list = $('#src-list');
-    if (!SOURCES.length) { put(list, h('li', { class: 'src' }, h('p', { class: 'muted' }, 'Todavía no hay fuentes en data.js.'))); return; }
-    const items = SOURCES.map((s, i) => ({ s, i })).sort((a, b) => (b.s.fav ? 1 : 0) - (a.s.fav ? 1 : 0) || a.i - b.i).map(x => x.s);
-    put(list, items.map(s => h('li', { class: 'src' },
-      h('div', { class: 'src-main' },
-        safeHref(s.url) ? h('a', { class: 'src-name', href: s.url, target: '_blank', rel: 'noopener noreferrer' }, s.name, ' ↗') : h('span', { class: 'src-name' }, s.name),
-        s.url ? h('span', { class: 'dom' }, host(s.url)) : null,
-        s.fav ? h('span', { class: 'fav' }, 'Muy buena') : null),
-      h('p', { class: 'src-note' }, s.note || ''),
-      h('div', { class: 'tags' }, arr(s.bestFor).map(t => h('span', { class: 'tag static' }, t))))));
-  }
-
+  /* ---------- taste ---------- */
   function tagBars() {
     const n = REFS.length;
     const m = new Map();
     for (const r of REFS) for (const t of arr(r.tags)) m.set(t, (m.get(t) || 0) + 1);
     const top = [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')).slice(0, 10);
-    if (!top.length) return h('p', { class: 'muted' }, 'Tus referencias todavía no tienen tags.');
     return h('div', { class: 'bars' }, top.map(([t, c]) => h('div', { class: 'bar' },
       h('span', { class: 'k' }, t),
       h('span', { class: 'track' }, h('span', { class: 'fill', style: { width: (c / n * 100).toFixed(1) + '%' } })),
       h('span', { class: 'v' }, c + '/' + n))));
   }
-
   function renderTaste() {
     const t = TASTE;
+    if (!t) { put($('#taste-body'), notice('Todavía no hay perfil de gusto', null)); return; }
     put($('#taste-body'),
-      h('p', { class: 'taste-summary' }, t && t.summary ? t.summary : 'Todavía no hay un perfil de gusto en data.js.'),
+      h('p', { class: 'taste-summary' }, t.summary || ''),
+      t.brief ? h('div', { class: 'd-actions' }, h('button', { class: 'btn solid', type: 'button', onclick: () => copy(String(t.brief), 'Brief copiado') }, 'Copiar brief de gusto')) : null,
       h('div', { class: 'taste-cols' },
-        h('div', null, h('h2', null, 'Se repite en tus referencias'), arr(t && t.rules).length ? h('ul', { class: 'rules' }, arr(t.rules).map(x => h('li', null, x))) : h('p', { class: 'muted' }, 'Sin datos todavía.')),
-        h('div', null, h('h2', null, 'Lo que evitás'), arr(t && t.avoid).length ? h('ul', { class: 'rules' }, arr(t.avoid).map(x => h('li', null, x))) : h('p', { class: 'muted' }, 'Sin datos todavía.')),
-        h('div', null, h('h2', null, 'Tags en tu archivo'), tagBars())),
-      t && t.brief ? codebox('Brief de gusto: pegalo antes de pedir un diseño', String(t.brief), 'Copiar brief', () => copy(String(t.brief), 'Brief copiado')) : null,
-      h('p', { class: 'muted prose' }, 'Cuando le pidas un diseño a Claude, decile “usá mi Inspiración Atus” o pegale este brief.'));
+        h('div', null, h('h2', null, 'Se repite'), h('ul', { class: 'rules' }, arr(t.rules).map(x => h('li', null, x)))),
+        h('div', null, h('h2', null, 'Evitás'), h('ul', { class: 'rules' }, arr(t.avoid).map(x => h('li', null, x)))),
+        h('div', null, h('h2', null, 'Tags'), tagBars())),
+      t.brief ? h('details', { class: 'fold' }, h('summary', null, 'Ver brief'), h('pre', { class: 'code' }, String(t.brief))) : null);
   }
 
-  /* ---------- discover: gallery search + live feed ---------- */
-  // Galleries are English-indexed; queries without "web/site" get "website" added where the site mixes other content.
+  /* ---------- discover: gallery search + live archive ---------- */
+  // Galleries are English-indexed: Spanish rubros are translated with SYN before building the link
+  const toEnglish = q => parseQuery(q).map(g => (SYN[norm(g.main[0])] || SYN[singular(norm(g.main[0]))] ? g.main[1] : g.main[0])).join(' ');
   const web = q => q ? (/\b(web|site|landing|ui)/i.test(q) ? q : q + ' website') : 'website design';
   const enc = encodeURIComponent;
   const GALLERIES = [
     { name: 'Pinterest', url: q => 'https://ar.pinterest.com/search/pins/?q=' + enc(web(q)) },
+    { name: 'Awwwards', url: q => q ? 'https://www.awwwards.com/websites/?text=' + enc(q) : 'https://www.awwwards.com/websites/' },
     { name: 'Savee', url: q => 'https://savee.com/search/?q=' + enc(q || 'website') },
     { name: 'Behance', url: q => 'https://www.behance.net/search/projects/' + enc(web(q)) },
-    { name: 'Awwwards', url: q => q ? 'https://www.awwwards.com/websites/?text=' + enc(q) : 'https://www.awwwards.com/websites/' },
     { name: 'CSS Design Awards', url: q => q ? 'https://www.cssdesignawards.com/search?q=' + enc(q) : 'https://www.cssdesignawards.com/website-gallery' },
-    { name: 'Minimal Gallery', url: q => q ? 'https://minimal.gallery/?s=' + enc(q) : 'https://minimal.gallery/' },
     { name: 'Land-book', url: q => q ? 'https://land-book.com/?search=' + enc(q) : 'https://land-book.com/' },
-    { name: 'One Page Love', url: q => q ? 'https://onepagelove.com/?s=' + enc(q) : 'https://onepagelove.com/' },
-    { name: 'SiteInspire', url: q => q ? 'https://www.siteinspire.com/websites?search=' + enc(q) : 'https://www.siteinspire.com/' },
     { name: 'Lapa Ninja', url: q => q ? 'https://www.lapa.ninja/search/?q=' + enc(q) : 'https://www.lapa.ninja/' },
+    { name: 'One Page Love', url: q => q ? 'https://onepagelove.com/?s=' + enc(q) : 'https://onepagelove.com/' },
+    { name: 'Minimal Gallery', url: q => q ? 'https://minimal.gallery/?s=' + enc(q) : 'https://minimal.gallery/' },
+    { name: 'SiteInspire', url: q => q ? 'https://www.siteinspire.com/websites?search=' + enc(q) : 'https://www.siteinspire.com/' },
     { name: 'Dribbble', url: q => 'https://dribbble.com/search/' + enc(web(q)) },
-    { name: 'Fonts In Use', hint: 'tipografía', url: q => q ? 'https://fontsinuse.com/search?terms=' + enc(q) : 'https://fontsinuse.com/' },
-    { name: 'Typewolf', hint: 'tipografía', url: q => q ? 'https://www.google.com/search?q=' + enc('site:typewolf.com ' + q) : 'https://www.typewolf.com/site-of-the-day' },
-    { name: '21st.dev', hint: 'componentes', url: q => q ? 'https://21st.dev/community/components/s/' + enc(q) : 'https://21st.dev/' },
-    { name: 'ecomm.design', hint: 'ecommerce', url: q => q ? 'https://ecomm.design/?s=' + enc(q) : 'https://ecomm.design/' },
-    { name: 'Google Imágenes', url: q => 'https://www.google.com/search?tbm=isch&q=' + enc(web(q)) },
+    { name: 'Fonts In Use', url: q => q ? 'https://fontsinuse.com/search?terms=' + enc(q) : 'https://fontsinuse.com/' },
+    { name: '21st.dev', url: q => q ? 'https://21st.dev/community/components/s/' + enc(q) : 'https://21st.dev/' },
+    { name: 'ecomm.design', url: q => q ? 'https://ecomm.design/?s=' + enc(q) : 'https://ecomm.design/' },
+    { name: 'Google', url: q => 'https://www.google.com/search?tbm=isch&q=' + enc(web(q)) },
   ];
-  // Ideas come from the taste profile: label in Spanish, query in English for the galleries.
-  const IDEAS = [
-    ['Portfolio oscuro', 'dark portfolio'], ['Tipografía gigante', 'big typography'], ['Grilla suiza', 'swiss grid'],
-    ['Arquitectura', 'architecture'], ['Interiores', 'interior design'], ['Estudio creativo', 'creative studio'],
-    ['Blanco y negro', 'black and white'], ['Grano y textura', 'grain texture'], ['Editorial', 'editorial'],
-    ['Músicos', 'musician'], ['Brutalista', 'brutalist'], ['Scroll horizontal', 'horizontal scroll'],
-    ['Moda', 'fashion'], ['Fotografía', 'photography portfolio'],
-  ];
-  // Words from the taste profile that make a site worth flagging "Para vos" (feeds are in English).
+  const IDEAS = ['dentista', 'restaurante', 'arquitectura', 'portfolio', 'hotel', 'moda', 'inmobiliaria', 'gimnasio', 'café', 'música', 'estudio', 'fotografía', 'abogado', 'belleza'];
+  // Words from the taste profile that flag a site "Para vos" (feeds are in English)
   const FOR_YOU = [['portfolio', 3], ['architect', 3], ['interior', 3], ['typograph', 3], ['big type', 3], ['swiss', 3],
     ['studio', 2], ['minimal', 2], ['dark', 2], ['black', 2], ['monochrom', 2], ['editorial', 2], ['grid', 2], ['photograph', 2],
-    ['agency', 2], ['brutal', 2], ['grain', 2], ['music', 2], ['type', 1], ['museum', 1], ['gallery', 1], ['fashion', 1], ['creative', 1]];
+    ['agency', 2], ['brutal', 2], ['grain', 2], ['music', 2], ['retro', 2], ['interactive', 1], ['type', 1], ['museum', 1], ['gallery', 1], ['fashion', 1], ['creative', 1]];
+  const SOURCE_BOOST = { 'The FWA': 2, 'CSS Winner': 1.5, 'SiteInspire': 1.5, 'Minimal Gallery': 1.5, 'Typewolf': 1.5, 'One Page Love': 1, 'Mindsparkle': 1, 'Behance': 0.3 };
   const PAGE = 24;
-  const fmtN = n => n.toLocaleString('es-AR');
 
   const L = {
     status: 'idle', // idle | loading | ready | error
     filter: 'all', // all | foryou | saved
-    source: null,
-    cat: null,
+    source: null, cat: null,
     mode: store.get('liveMode', 'new'), // new | random
-    rank: null,
-    shown: PAGE,
+    rank: null, shown: PAGE, visible: [],
     seen: new Set(store.get('seen', [])),
     saved: store.get('saved', []),
-    clearConfirm: false,
-    rendered: false,
+    clearConfirm: false, rendered: false,
   };
 
   const liveData = () => window.ATUS_LIVE || null;
-  const scoreOf = hs => FOR_YOU.reduce((n, [k, w]) => n + (hs.includes(k) ? w : 0), 0);
   let allCache = [], allFrom = null;
-  // Items are prepared once per load: search text, taste score and timestamp
+  // Items are prepared once per load: search fields, taste score and timestamp
   function liveAll() {
     const D = liveData();
     if (!D || !Array.isArray(D.items)) return [];
     if (allFrom === D.items) return allCache;
     allFrom = D.items;
-    allCache = D.items.filter(i => i && safeHref(i.link) && i.title).map(i => {
-      const hs = norm([i.title, i.name, i.tagline, i.desc, arr(i.cats).join(' '), i.source].join(' '));
-      return Object.assign({}, i, { _hs: hs, _score: scoreOf(hs), _t: Date.parse(i.date) || 0 });
+    // The same site can come from two galleries: keep the first one by name. Skip articles that aren't sites.
+    const names = new Set();
+    allCache = D.items.filter(i => {
+      if (!i || !safeHref(i.link) || !i.title || /^(article|template review|interview)\b/i.test(i.title)) return false;
+      const key = norm(i.name || i.title).replace(/[^a-z0-9]/g, '');
+      if (names.has(key)) return false;
+      names.add(key);
+      return true;
+    }).map(i => {
+      const f = { q: field(arr(i.q)), name: field(i.name, i.title, i.tagline), cats: field(arr(i.cats)), desc: field(i.desc), extra: field(i.source) };
+      const all = f.q + f.name + f.cats + f.desc;
+      return Object.assign({}, i, { _f: f, _score: FOR_YOU.reduce((n, [k, w]) => n + (all.includes(k) ? w : 0), 0), _t: Date.parse(i.date) || 0 });
     });
     return allCache;
   }
-  const ago = iso => {
-    const t = Date.parse(iso);
-    if (!t) return '';
-    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
-    if (m < 60) return `hace ${m || 1} min`;
-    const hrs = Math.round(m / 60);
-    if (hrs < 24) return `hace ${hrs} h`;
-    const d = Math.round(hrs / 24);
-    return d === 1 ? 'ayer' : `hace ${d} días`;
-  };
-  const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + String(d.getFullYear()).slice(2); };
+  // Best first: how well it matches, then the gallery's curation, your taste and how recent it is
+  function rankLive(list, groups) {
+    const now = Date.now();
+    return list.map(i => {
+      const m = matchScore(i._f, groups);
+      if (!m) return null;
+      const fresh = Math.max(0, 1 - (now - i._t) / (365 * 864e5));
+      return [i, m + (SOURCE_BOOST[i.source] || 1) + i._score * 0.2 + fresh];
+    }).filter(Boolean).sort((a, b) => b[1] - a[1]).map(([i]) => i);
+  }
 
-  // live.js can be a couple of MB, so it loads only when Descubrir opens
+  // live.js can be a couple of MB, so it loads only when it's needed
   function loadLive(force) {
     if (L.status === 'loading' || (L.status === 'ready' && !force)) return;
     L.status = 'loading';
     renderLive();
     const s = document.createElement('script');
     s.src = 'live.js?v=' + Math.floor(Date.now() / 600000);
-    s.onload = () => { s.remove(); L.status = 'ready'; renderCounts(); renderLive(); };
+    s.onload = () => { s.remove(); L.status = 'ready'; renderCounts(); renderLive(); renderRefLive(); };
     s.onerror = () => { s.remove(); L.status = 'error'; renderLive(); };
     document.body.append(s);
   }
@@ -640,16 +658,17 @@
 
   function renderGalleries() {
     const q = $('#dq').value.trim();
+    const en = q ? toEnglish(q) : '';
     put($('#d-ideas'),
-      h('span', { class: 'lbl' }, 'Ideas'),
-      IDEAS.map(([label, query]) => chip(label, norm(q) === norm(query), () => setQuery(norm(q) === norm(query) ? '' : query), 'idea:' + query)),
+      IDEAS.map(w => chip(w, norm(q) === norm(w), () => setQuery(norm(q) === norm(w) ? '' : w), 'idea:' + w)),
       h('button', { class: 'btn sm', type: 'button', 'data-key': 'idea:random', onclick: () => {
-        const pool = IDEAS.filter(([, query]) => norm(query) !== norm(q));
-        setQuery(pool[Math.floor(Math.random() * pool.length)][1]);
+        const pool = IDEAS.filter(w => norm(w) !== norm(q));
+        setQuery(pool[Math.floor(Math.random() * pool.length)]);
         restoreFocus('idea:random');
       } }, 'Sorprendeme'));
-    put($('#d-links'), GALLERIES.map(g => h('a', { class: 'gal', href: g.url(q), target: '_blank', rel: 'noopener noreferrer' },
-      h('span', null, g.name), g.hint ? h('small', null, g.hint) : null)));
+    put($('#d-links'),
+      h('span', { class: 'lbl' }, en ? `“${en}” en` : 'Ir a'),
+      GALLERIES.map(g => h('a', { class: 'chip link', href: g.url(en), target: '_blank', rel: 'noopener noreferrer' }, g.name, ' ↗')));
   }
 
   function setQuery(q) {
@@ -670,13 +689,13 @@
     let list;
     if (L.filter === 'saved') {
       list = L.saved.map(s => all.find(i => i.link === s.link)
-        || Object.assign({ _hs: norm([s.title, s.name, s.source].join(' ')), _score: 0, _t: Date.parse(s.date) || 0, cats: [] }, s));
+        || Object.assign({ _f: { q: '', name: field(s.title, s.name), cats: '', desc: '', extra: field(s.source) }, _score: 0, _t: Date.parse(s.date) || 0, cats: [] }, s));
     } else list = all;
     if (L.source) list = list.filter(i => i.source === L.source);
     if (L.cat) { const c = norm(L.cat); list = list.filter(i => arr(i.cats).some(x => norm(x) === c)); }
-    const terms = norm($('#dq').value).split(/\s+/).filter(Boolean);
-    if (terms.length) list = list.filter(i => terms.every(t => i._hs.includes(t)));
     if (L.filter === 'foryou') list = list.filter(i => i._score >= 3);
+    const groups = parseQuery($('#dq').value);
+    if (groups.length) return rankLive(list, groups);
     if (L.filter === 'saved') return list;
     if (L.mode === 'random') {
       if (!L.rank) newRank();
@@ -687,27 +706,21 @@
   }
 
   function liveCard(it) {
-    const saved = L.saved.some(s => s.link === it.link);
     const title = it.name || it.title;
-    const ph = () => h('span', { class: 'ph' }, h('span', { class: 'ph-name' }, title));
     let img = null;
     if (safeHref(it.image)) {
       img = h('img', { src: it.image, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' });
-      img.addEventListener('error', () => img.replaceWith(ph()), { once: true });
+      img.addEventListener('error', () => img.replaceWith(placeholder(title)), { once: true });
     }
-    const blurb = it.tagline || it.desc;
-    return h('article', { class: 'card' },
-      h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title} en ${it.source}` },
-        img || ph(), (it._score || 0) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
-      h('div', { class: 'card-head' }, h('h3', null, title), h('span', { class: 'dom' }, [it.source, dayOf(it.date)].filter(Boolean).join(' · '))),
-      blurb ? h('p', { class: 'likes dna' }, blurb) : null,
-      arr(it.cats).length ? h('div', { class: 'tags' }, arr(it.cats).slice(0, 3).map(c => h('button', {
-        class: 'tag', type: 'button', title: 'Ver más de “' + c + '”',
-        onclick: () => { L.cat = c; L.shown = PAGE; renderLive(); $('#live-filters').scrollIntoView({ block: 'start', behavior: 'smooth' }); },
-      }, c))) : null,
-      h('div', { class: 'card-actions' },
-        h('a', { class: 'btn sm', href: it.link, target: '_blank', rel: 'noopener noreferrer' }, 'Ver ↗'),
-        h('button', { class: 'btn sm ' + (saved ? 'lime' : 'ghost'), type: 'button', 'aria-pressed': String(saved), 'data-key': 'save:' + it.link, onclick: () => toggleSave(it) }, saved ? '✓ Guardada' : 'Guardar')));
+    const saved = L.saved.some(s => s.link === it.link);
+    return h('article', { class: 'card live' },
+      h('div', { class: 'shot-wrap' },
+        h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title}` },
+          img || placeholder(title), (it._score || 0) >= 5 ? h('span', { class: 'badge' }, 'Para vos') : null),
+        h('button', { class: 'save' + (saved ? ' on' : ''), type: 'button', 'aria-pressed': String(saved), 'aria-label': saved ? 'Sacar de guardadas' : 'Guardar', 'data-key': 'save:' + it.link, onclick: () => toggleSave(it) }, saved ? '★' : '☆')),
+      h('div', { class: 'card-head' },
+        h('a', { class: 'title', href: it.link, target: '_blank', rel: 'noopener noreferrer' }, title),
+        h('span', { class: 'dom' }, it.source)));
   }
 
   const liveCache = new Map();
@@ -726,78 +739,60 @@
       bySource.set(i.source, (bySource.get(i.source) || 0) + 1);
       for (const c of arr(i.cats)) byCat.set(c, (byCat.get(c) || 0) + 1);
     }
-    const cats = [...byCat].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')).slice(0, 24);
-    if (L.cat && !cats.some(([c]) => c === L.cat)) cats.unshift([L.cat, byCat.get(L.cat) || 0]);
+    const cats = [...byCat].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')).slice(0, 20).map(([c]) => c);
+    if (L.cat && !cats.includes(L.cat)) cats.unshift(L.cat);
     const set = fn => () => { fn(); L.shown = PAGE; renderLive(); };
     put($('#live-filters'),
-      h('div', { class: 'frow' },
-        h('span', { class: 'lbl' }, 'Ver'),
+      h('div', { class: 'frow scroll-row' },
         chip('Todas', L.filter === 'all', set(() => { L.filter = 'all'; }), 'live:all'),
         chip('Para vos', L.filter === 'foryou', set(() => { L.filter = 'foryou'; }), 'live:foryou'),
-        chip(['Guardadas', h('span', { class: 'c' }, pad(L.saved.length))], L.filter === 'saved', set(() => { L.filter = 'saved'; }), 'live:saved'),
+        chip(`★ ${L.saved.length}`, L.filter === 'saved', set(() => { L.filter = 'saved'; }), 'live:saved'),
         h('span', { class: 'sep', 'aria-hidden': 'true' }),
-        chip('Más nuevas', L.mode === 'new', set(() => { L.mode = 'new'; store.set('liveMode', 'new'); }), 'live:new'),
-        chip('Al azar', L.mode === 'random', set(() => { L.mode = 'random'; store.set('liveMode', 'random'); newRank(); }), 'live:random')),
-      bySource.size ? h('div', { class: 'frow' },
-        h('span', { class: 'lbl' }, 'Galería'),
-        [...bySource].sort((a, b) => b[1] - a[1]).map(([name, n]) => chip([name, h('span', { class: 'c' }, fmtN(n))], L.source === name, set(() => { L.source = L.source === name ? null : name; }), 'live:src:' + name))) : null,
-      cats.length ? h('div', { class: 'frow' },
-        h('span', { class: 'lbl' }, 'Tema'),
-        cats.map(([c, n]) => chip([c, h('span', { class: 'c' }, fmtN(n))], L.cat === c, set(() => { L.cat = L.cat === c ? null : c; }), 'live:cat:' + c))) : null);
+        chip('Nuevas', L.mode === 'new', set(() => { L.mode = 'new'; store.set('liveMode', 'new'); }), 'live:new'),
+        chip('Al azar', L.mode === 'random', set(() => { L.mode = 'random'; store.set('liveMode', 'random'); newRank(); }), 'live:random'),
+        h('span', { class: 'sep', 'aria-hidden': 'true' }),
+        [...bySource].sort((a, b) => b[1] - a[1]).map(([name]) => chip(name, L.source === name, set(() => { L.source = L.source === name ? null : name; }), 'live:src:' + name))),
+      cats.length ? h('div', { class: 'frow scroll-row' },
+        cats.map(c => chip('#' + c, L.cat === c, set(() => { L.cat = L.cat === c ? null : c; }), 'live:cat:' + c))) : null);
   }
 
   function renderLive() {
     if (!L.rendered) return;
     const D = liveData(), all = liveAll(), grid = $('#live-grid'), more = $('#live-more');
     $('#live-shuffle').disabled = L.status !== 'ready' || !all.length;
-
     if (L.status === 'idle' || L.status === 'loading') {
-      put($('#live-meta'), h('span', null, 'Cargando webs…'));
+      put($('#live-meta'), 'Cargando…');
       put($('#live-filters'));
       more.hidden = true;
-      put(grid, notice('Cargando webs…', 'Son muchas; tarda un segundo.'));
+      put(grid);
       return;
     }
     if (L.status === 'error') {
       put($('#live-meta'));
       put($('#live-filters'));
       more.hidden = true;
-      put(grid, h('div', { class: 'notice' },
-        h('h2', null, 'No pude cargar las webs'),
-        h('p', null, 'Revisá la conexión. Si abriste el archivo en tu compu, usá la versión online.'),
-        h('button', { class: 'btn solid', type: 'button', onclick: () => loadLive(true) }, 'Probar de nuevo')));
+      put(grid, h('div', { class: 'notice' }, h('h2', null, 'No pude cargar las webs'), h('button', { class: 'btn solid', type: 'button', onclick: () => loadLive(true) }, 'Probar de nuevo')));
       return;
     }
 
-    const live = D && Array.isArray(D.sources) ? D.sources.filter(s => s.ok !== false).length : 0;
-    put($('#live-meta'), all.length
-      ? [h('span', null, h('b', null, fmtN(all.length)), ' webs'), live ? h('span', null, 'de ', h('b', null, String(live)), ' galerías') : null, D.updated ? h('span', null, 'actualizado ', h('b', null, ago(D.updated))) : null]
-      : h('span', null, 'Las webs se cargan desde GitHub cada 6 horas.'));
+    const q = $('#dq').value.trim();
+    const list = liveList();
+    put($('#live-meta'), q
+      ? [h('b', null, fmtN(list.length)), ` con “${q}”`]
+      : [h('b', null, fmtN(all.length)), ' webs', D && D.updated ? ' · ' + ago(D.updated) : '']);
     renderLiveFilters(all);
 
     const bar = $('#saved-bar');
-    bar.hidden = !L.saved.length;
-    if (L.saved.length) {
+    bar.hidden = !L.saved.length || L.filter !== 'saved';
+    if (!bar.hidden) {
       put(bar,
-        h('p', null, `Tenés ${L.saved.length} ${L.saved.length === 1 ? 'web guardada' : 'webs guardadas'} en este dispositivo. Pasáselas a Claude para sumarlas a tus referencias.`),
         h('button', { class: 'btn sm solid', type: 'button', onclick: copySaved }, 'Copiar para Claude'),
-        h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar la lista?' : 'Vaciar'));
+        h('button', { class: 'btn sm ' + (L.clearConfirm ? 'danger' : 'ghost'), type: 'button', 'data-key': 'saved:clear', onclick: clearSaved }, L.clearConfirm ? '¿Vaciar?' : 'Vaciar'));
     }
 
-    const list = liveList();
-    if (!all.length && L.filter !== 'saved') {
-      more.hidden = true;
-      put(grid, notice('Todavía no hay webs', 'El robot de GitHub las trae cada 6 horas.'));
-      return;
-    }
     if (!list.length) {
       more.hidden = true;
-      const q = $('#dq').value.trim();
-      put(grid, L.filter === 'saved' && !q && !L.source && !L.cat
-        ? notice('No guardaste nada todavía', 'Tocá “Guardar” en las webs que te gusten y después copialas para Claude.')
-        : q
-          ? notice(`Nada con “${q}”`, 'Probá esa búsqueda en las galerías de arriba o sacá algún filtro.')
-          : notice('Nada con esos filtros', 'Sacá algún filtro para ver más.'));
+      put(grid, notice(L.filter === 'saved' && !q ? 'Todavía no guardaste nada' : q ? `Nada con “${q}”` : 'Nada con esos filtros', q ? 'Probá en las galerías de arriba.' : null));
       return;
     }
     if (grid.querySelector('.notice')) put(grid);
@@ -821,17 +816,17 @@
 
   function nextBatch() {
     // Everything on screen counts as seen, then a fresh random order brings unseen sites first
-    for (const i of L.visible || []) L.seen.add(i.link);
+    for (const i of L.visible) L.seen.add(i.link);
     if (L.seen.size >= liveAll().length) L.seen.clear();
     store.set('seen', [...L.seen].slice(-6000));
     L.mode = 'random';
     store.set('liveMode', 'random');
     if (L.filter === 'saved') L.filter = 'all';
+    if ($('#dq').value) { $('#dq').value = ''; store.set('dq', ''); renderGalleries(); }
     newRank();
     L.shown = PAGE;
     renderLive();
     $('#live-head').scrollIntoView({ block: 'start', behavior: 'smooth' });
-    toast('Otra tanda: webs que todavía no viste');
   }
 
   function toggleSave(it) {
@@ -841,15 +836,13 @@
     store.set('saved', L.saved);
     L.clearConfirm = false;
     renderLive();
+    if (S.tab === 'refs') renderRefLive();
     restoreFocus(key);
-    toast(L.saved.some(s => s.link === it.link) ? 'Guardada' : 'Sacada de guardadas');
   }
-
   function copySaved() {
     const lines = L.saved.map(s => `- ${s.name || s.title} (${s.source}): ${s.link}`);
-    copy(['Agregá estas webs a mi Inspiración Atus. Abrí cada una, sacá captura y armá el ADN y el prompt como las demás:', ...lines].join('\n'), 'Lista copiada: pegásela a Claude');
+    copy(['Agregá estas webs a mi Inspiración Atus. Abrí cada una, sacá captura y armá el ADN y el prompt como las demás:', ...lines].join('\n'), 'Copiado: pegáselo a Claude');
   }
-
   let clearT = 0;
   function clearSaved() {
     clearTimeout(clearT);
@@ -863,9 +856,8 @@
     L.clearConfirm = false;
     L.saved = [];
     store.set('saved', L.saved);
-    if (L.filter === 'saved') L.filter = 'all';
+    L.filter = 'all';
     renderLive();
-    toast('Lista vaciada');
   }
 
   /* ---------- boot ---------- */
@@ -888,16 +880,19 @@
   function boot() {
     for (const b of $$('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
     $('#mark').addEventListener('click', e => { e.preventDefault(); setTab('refs'); });
-    $('#q').addEventListener('input', e => { S.q = e.target.value; renderGrid(); });
-    if (window.matchMedia && matchMedia('(max-width: 760px)').matches) $('#q').placeholder = 'Rubro, fuente, color, estilo…';
+
+    let qT = 0;
+    $('#q').addEventListener('input', e => {
+      S.q = e.target.value;
+      clearTimeout(qT);
+      qT = setTimeout(renderGrid, 120);
+    });
 
     $('#mix-what').value = store.get('mixWhat', '');
-    $('#mix-sections').value = store.get('mixSections', '');
     $('#mix-taste').checked = store.get('mixTaste', true);
     $('#mix-what').addEventListener('input', e => { store.set('mixWhat', e.target.value); renderMixOut(); });
-    $('#mix-sections').addEventListener('input', e => { store.set('mixSections', e.target.value); renderMixOut(); });
     $('#mix-taste').addEventListener('change', e => { store.set('mixTaste', e.target.checked); renderMixOut(); });
-    $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt de mezcla copiado'));
+    $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt copiado'));
 
     $('#dq').value = store.get('dq', '');
     let dqT = 0;
@@ -922,8 +917,7 @@
       if (!S.sheet) {
         if (e.key === '/' && !isTyping(e.target) && !e.metaKey && !e.ctrlKey) {
           e.preventDefault();
-          if (S.tab !== 'refs') setTab('refs', { scroll: false });
-          $('#q').focus();
+          (S.tab === 'discover' ? $('#dq') : (S.tab !== 'refs' && setTab('refs', { scroll: false }), $('#q'))).focus();
         }
         return;
       }
@@ -934,7 +928,7 @@
         return;
       }
       if (e.key === 'Tab') {
-        const f = $$('#sheet-panel button, #sheet-panel a[href], #sheet-panel textarea:not(.vh)').filter(x => !x.disabled && x.getClientRects().length);
+        const f = $$('#sheet-panel button, #sheet-panel a[href], #sheet-panel summary, #sheet-panel textarea:not(.vh)').filter(x => !x.disabled && x.getClientRects().length);
         if (!f.length) return;
         const first = f[0], last = f[f.length - 1];
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -943,8 +937,7 @@
     });
 
     const initial = tabFromHash(location.hash) || (/^#ref-/.test(location.hash) ? 'refs' : store.get('tab', 'refs'));
-    setTab(initial, { scroll: false, keepHash: /^#ref-/.test(location.hash) });
-    renderSources();
+    setTab(TABS.includes(initial) ? initial : 'refs', { scroll: false, keepHash: /^#ref-/.test(location.hash) });
     renderTaste();
     render();
     applyHash();

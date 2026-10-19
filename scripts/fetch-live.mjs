@@ -20,6 +20,20 @@ const FEEDS = [
   { name: 'Mindsparkle', home: 'https://mindsparklemag.com/', url: () => 'https://mindsparklemag.com/feed/' },
   { name: 'Land-book', home: 'https://land-book.com/', url: () => 'https://land-book.com/feed' },
 ];
+// Rubros searched on One Page Love so the archive has sites for each kind of business.
+// Each run takes a slice (all of them with RUBROS_ALL=1).
+const RUBROS = ['dentist', 'dental', 'clinic', 'doctor', 'health', 'hospital', 'pharmacy', 'psychologist', 'therapy', 'wellness',
+  'spa', 'beauty', 'salon', 'barber', 'skincare', 'cosmetics', 'fitness', 'gym', 'yoga', 'sport', 'restaurant', 'cafe', 'coffee',
+  'bakery', 'bar', 'wine', 'beer', 'food', 'chef', 'hotel', 'travel', 'tourism', 'real estate', 'architecture', 'interior design',
+  'construction', 'furniture', 'lawyer', 'law firm', 'finance', 'bank', 'insurance', 'accounting', 'consulting', 'agency', 'startup',
+  'saas', 'app', 'ai', 'crypto', 'ecommerce', 'fashion', 'jewelry', 'shoes', 'photography', 'photographer', 'film', 'music', 'band',
+  'festival', 'event', 'wedding', 'conference', 'museum', 'art', 'gallery', 'artist', 'school', 'university', 'education', 'kids',
+  'nonprofit', 'charity', 'magazine', 'podcast', 'book', 'author', 'car', 'bike', 'pet', 'veterinary', 'farm', 'garden', 'florist',
+  'energy', 'solar', 'logistics', 'manufacturing', 'tech', 'game', 'portfolio', 'designer', 'developer', 'studio'];
+const RUBRO_SLICE = 16;
+const ALL_RUBROS = process.env.RUBROS_ALL === '1';
+// One Page Love search results also list templates and articles; keep only websites
+const NOT_A_SITE = /^(template review|interview|podcast|resource|news|tutorial|freebie|giveaway|article)\b/i;
 // Categories that say nothing about the design
 const SKIP_CATS = /^(uncategorized|inspiration|website inspiration|long screenshot|featured|designs?)$/i;
 
@@ -69,7 +83,9 @@ function dateOf(raw, image) {
 
 function parseItem(raw, feed) {
   const link = plain(tag(raw, 'link')) || plain(tag(raw, 'guid'));
-  const title = plain(tag(raw, 'title')).replace(/^website inspiration:\s*/i, '');
+  const rawTitle = plain(tag(raw, 'title'));
+  if (NOT_A_SITE.test(rawTitle)) return null;
+  const title = rawTitle.replace(/^website inspiration:\s*/i, '');
   if (!isHttp(link) || !title) return null;
   const [name, ...rest] = title.split(/\s+[|–—]\s+/);
   let desc = plain(tag(raw, 'description'))
@@ -138,15 +154,19 @@ const now = new Date().toISOString();
 const sources = [];
 let okCount = 0;
 
+function store(it, term) {
+  const old = byLink.get(it.link);
+  // Keep the first date we saw for feeds that don't publish one, and every rubro a site was found under
+  it.date = it.date || (old && old.date) || now;
+  const q = new Set([...((old && old.q) || []), ...(term ? [term] : [])]);
+  if (q.size) it.q = [...q];
+  byLink.set(it.link, it);
+}
+
 for (const feed of FEEDS) {
   try {
     const items = await readFeed(feed);
-    for (const it of items) {
-      const old = byLink.get(it.link);
-      // Keep the first date we saw for feeds that don't publish one
-      it.date = it.date || (old && old.date) || now;
-      byLink.set(it.link, it);
-    }
+    for (const it of items) store(it);
     sources.push({ name: feed.name, home: feed.home, count: items.length, ok: true });
     okCount++;
     console.log(`${feed.name}: ${items.length} items`);
@@ -161,9 +181,35 @@ if (!okCount) {
   process.exit(1);
 }
 
-const items = [...byLink.values()]
-  .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
-  .slice(0, MAX_ITEMS);
+// Rubro sweep on One Page Love: search results and the matching tag page
+const opl = FEEDS.find(f => f.name === 'One Page Love');
+const slots = Math.ceil(RUBROS.length / RUBRO_SLICE);
+const slot = Math.floor(Date.now() / (6 * 3600e3)) % slots;
+const terms = ALL_RUBROS ? RUBROS : RUBROS.slice(slot * RUBRO_SLICE, (slot + 1) * RUBRO_SLICE);
+let rubroHits = 0;
+for (const term of terms) {
+  const urls = [
+    `https://onepagelove.com/?s=${encodeURIComponent(term)}&feed=rss2`,
+    `https://onepagelove.com/tag/${term.replace(/\s+/g, '-')}/feed`,
+  ];
+  for (const url of urls) {
+    try {
+      for (const raw of await readPage(url)) {
+        const it = parseItem(raw, opl);
+        if (it) { store(it, term); rubroHits++; }
+      }
+    } catch { /* a rubro without results is fine */ }
+    await sleep(400);
+  }
+}
+console.log(`Rubros (${terms.length}): ${rubroHits} hits`);
+
+// Sites found under a rubro always stay; the rest keeps the newest MAX_ITEMS
+const byDate = (a, b) => Date.parse(b.date) - Date.parse(a.date);
+const everything = [...byLink.values()].sort(byDate);
+const tagged = everything.filter(i => i.q && i.q.length);
+const rest = everything.filter(i => !(i.q && i.q.length)).slice(0, MAX_ITEMS);
+const items = [...tagged, ...rest].sort(byDate);
 
 if (JSON.stringify(items) === JSON.stringify(previous.items)) {
   console.log('No new websites; live.js unchanged.');
