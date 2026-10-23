@@ -13,6 +13,7 @@ Archivo de webs de referencia: capturas, tipografías, paletas, layout y un prom
 | `img/` | Capturas de cada referencia |
 | `live.js` | Webs nuevas de las galerías (lo escribe el robot, no se edita a mano) |
 | `scripts/fetch-live.mjs` | El robot: lee los feeds de Minimal Gallery, One Page Love, SiteInspire, Lapa Ninja, CSS Winner, Behance, The FWA, Typewolf y Mindsparkle |
+| `scripts/add-ref.mjs` + `.github/workflows/agregar.yml` | El robot del botón **+ Agregar**: suma a `data.js` la web del issue que abrís |
 | `.github/workflows/live.yml` | Corre el robot cada 6 horas; además busca en One Page Love unos 95 rubros (dentist, restaurant, hotel…) |
 
 ## Descubrir
@@ -36,6 +37,12 @@ Para verla en tu compu, abrí `index.html` con doble clic.
 Si el repo es público, cualquiera con el link puede verla.
 
 ## Agregar una referencia
+
+**Con el botón (lo más rápido):** en Referencias tocá **+ Agregar** y pegá el link (en la compu también podés pegarlo directo con Ctrl+V). La web aparece al instante en ese dispositivo y se abre GitHub con un issue ya escrito: tocá **Create**. Un robot (`.github/workflows/agregar.yml` + `scripts/add-ref.mjs`) la abre en Chrome, le saca dos capturas, lee las tipografías y los colores que usa, la suma al principio de `data.js` con `"auto": true` y te responde en el issue. En uno o dos minutos está en todos tus dispositivos. Solo procesa issues tuyos cuyo título empieza con "Agregar". Para probarlo sin guardar nada: **Actions → Agregar referencia → Run workflow** con *prueba* en 1.
+
+Las fichas automáticas no tienen layout, movimiento ni "por qué funciona": pedile a Claude que las complete.
+
+**A mano:**
 
 1. Guardá una captura de la web (1440 × 900 queda bien) en `img/`, por ejemplo `img/nombre.jpg`. Si querés una segunda que aparezca al pasar el mouse, guardala como `img/nombre-2.jpg`.
 2. Abrí `data.js` y pegá un bloque como este **al principio** de la lista `refs` (la primera es la más nueva):
