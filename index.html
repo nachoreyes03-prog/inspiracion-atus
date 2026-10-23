@@ -11,8 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=20261019-1">
-<link rel="stylesheet" href="botones.css?v=20261019-1">
+<link rel="stylesheet" href="styles.css?v=20261023-1">
+<link rel="stylesheet" href="botones.css?v=20261023-1">
 </head>
 <body>
 
@@ -31,9 +31,12 @@
 <main>
   <section class="view wrap" id="view-refs" role="tabpanel" aria-label="Referencias">
     <div class="toolbar">
-      <div class="search">
-        <label class="vh" for="q">Buscar</label>
-        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá: dentista, portfolio, lima…">
+      <div class="search-row">
+        <div class="search">
+          <label class="vh" for="q">Buscar</label>
+          <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscá: dentista, portfolio, lima…">
+        </div>
+        <div data-pour="below"><button class="btn solid" type="button" id="add-open" data-tip="Pegá el link de una web">+ Agregar</button></div>
       </div>
       <div class="frow scroll-row" id="filters"></div>
     </div>
@@ -95,6 +98,17 @@
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog class="confirm" id="add" aria-labelledby="add-title">
+  <form id="add-form" novalidate>
+    <label class="fld"><span id="add-title">Link de la web</span><input class="in" id="add-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…"></label>
+    <p class="add-err" id="add-err" role="alert" hidden>Ese link no parece una web. Probá copiándolo de nuevo.</p>
+    <p class="add-note">Después tocá <b>Create</b> en GitHub y queda en todos tus dispositivos.</p>
+    <div class="confirm-actions">
+      <button class="btn ghost" type="button" id="add-no">Cancelar</button>
+      <button class="btn solid" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
 <dialog class="confirm" id="confirm" aria-labelledby="confirm-text">
   <p id="confirm-text"></p>
   <div class="confirm-actions">
@@ -104,8 +118,8 @@
 </dialog>
 
 <!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
-<script src="data.js?v=20261019-1"></script>
-<script src="botones.js?v=20261019-1"></script>
-<script src="app.js?v=20261019-1"></script>
+<script src="data.js?v=20261023-1"></script>
+<script src="botones.js?v=20261023-1"></script>
+<script src="app.js?v=20261023-1"></script>
 </body>
 </html>

@@ -1,0 +1,83 @@
+name: Agregar referencia
+
+# The "+ Agregar" button opens a GitHub issue titled "Agregar: site.com" with the link in the body.
+# This saves that site in data.js (screenshots, fonts, colors) and answers the issue.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch: # to run it by hand from the Actions tab
+    inputs:
+      url:
+        description: "Link de la web"
+        required: true
+      prueba:
+        description: "Poné 1 para probar sin guardar nada (las capturas quedan como artifact)"
+        default: "0"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: agregar
+  cancel-in-progress: false
+
+jobs:
+  add:
+    # Only the repo owner's issues: anyone can open an issue on a public repo
+    if: github.event_name == 'workflow_dispatch' || (github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Agregar'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sacar capturas, tipografías y colores
+        id: add
+        run: node scripts/add-ref.mjs
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          URL: ${{ inputs.url }}
+          DRY_RUN: ${{ inputs.prueba == '1' && '1' || '0' }}
+
+      - name: Guardar
+        id: save
+        if: steps.add.outputs.status == 'added' && inputs.prueba != '1'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data.js index.html img
+          git commit -m "Referencia nueva: $NAME"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+        env:
+          NAME: ${{ steps.add.outputs.name }}
+
+      - name: Subir lo de la prueba
+        if: inputs.prueba == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prueba
+          path: out/
+
+      - name: Responder y cerrar el issue
+        if: always() && github.event_name == 'issues'
+        run: |
+          case "$STATUS" in
+            added)  [ "$SAVED" = success ] || { gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "No pude guardarla en el repo. El detalle está en la pestaña Actions."; exit 1; }
+                    MSG="Listo: **$NAME** ya está en Referencias, con capturas, tipografías y colores. Aparece en uno o dos minutos: $SITE#ref-$ID" ;;
+            exists) MSG="**$NAME** ya estaba en Referencias: $SITE#ref-$ID" ;;
+            *)      MSG="No pude sumarla: ${ERROR:-el robot falló}. El detalle está en la pestaña Actions." ;;
+          esac
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "$MSG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          STATUS: ${{ steps.add.outputs.status }}
+          NAME: ${{ steps.add.outputs.name }}
+          ID: ${{ steps.add.outputs.id }}
+          ERROR: ${{ steps.add.outputs.error }}
+          SAVED: ${{ steps.save.outcome }}
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/

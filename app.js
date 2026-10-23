@@ -248,7 +248,85 @@
       return r;
     });
   }
-  const allRefs = () => [...REFS, ...favRefs()];
+  // Pages added with "+ Agregar" show up at once on this device. The GitHub issue that opens next
+  // makes them permanent: a robot (scripts/add-ref.mjs) screenshots the site, reads its fonts and
+  // colors and adds it to data.js; from then on the real reference replaces the local copy.
+  const REPO = 'nachoreyes03-prog/inspiracion-atus';
+  // Sites on shared hosts (Behance, Instagram…) are told apart by their path, the rest by host
+  const SHARED_HOSTS = /(^|\.)(behance\.net|dribbble\.com|instagram\.com|pinterest\.[a-z.]+|x\.com|twitter\.com|youtube\.com|vimeo\.com|medium\.com|github\.com|notion\.so|awwwards\.com|framer\.com|linkedin\.com)$/;
+  const siteKey = u => {
+    const hst = host(u).toLowerCase();
+    if (!SHARED_HOSTS.test(hst)) return hst;
+    try { return hst + new URL(u).pathname.replace(/\/+$/, '').toLowerCase(); } catch { return hst; }
+  };
+  const refKeys = new Set(REFS.map(r => r.url && siteKey(r.url)).filter(Boolean));
+  let ADDED = store.get('added', []).filter(a => a && safeHref(a.url) && !refKeys.has(siteKey(a.url)));
+  store.set('added', ADDED);
+  const nameOfHost = hst => { const w = hst.split('.')[0] || hst; return w.charAt(0).toUpperCase() + w.slice(1); };
+  const issueUrl = url => `https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: 'Agregar: ' + host(url), body: url, labels: 'agregar' });
+
+  function pendingRefs() {
+    return ADDED.map(a => {
+      const src = host(a.url), name = nameOfHost(src);
+      const r = {
+        id: 'add:' + a.url, fav: true, pending: true, name, url: a.url, source: src,
+        image: 'https://s.wordpress.com/mshots/v1/' + encodeURIComponent(a.url) + '?w=1440&h=900',
+        rubro: '', tags: [], cats: [], desc: '',
+        prompt: [`Diseñá una web con la dirección visual de ${name} (${a.url}).`, 'Abrí la web y tomá su tipografía, paleta, layout y movimiento como dirección.', 'Adaptalo a: [describí tu proyecto acá].'].join('\n'),
+        mixText: { type: `la tipografía de ${name}`, color: `los colores de ${name}`, layout: `el layout de ${name}`, motion: `el movimiento de ${name}`, tone: `la actitud de ${name}` },
+      };
+      r._f = { q: '', name: field(name, src), cats: field('nueva'), desc: '', extra: field(a.url) };
+      return r;
+    });
+  }
+  // Pulls a link out of whatever was pasted ("mirá esta https://…", "www.site.com", "site.com/x")
+  function cleanUrl(text) {
+    const s = String(text || '').trim();
+    let u = (s.match(/https?:\/\/[^\s<>"']+/i) || [])[0] || (s.match(/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i) || [])[0];
+    if (!u) return null;
+    u = u.replace(/[.,;:!?)\]]+$/, '');
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try { const x = new URL(u); if (!x.hostname.includes('.')) return null; x.hash = ''; return x.href; } catch { return null; }
+  }
+  function openAdd(prefill) {
+    const d = $('#add');
+    $('#add-url').value = prefill || '';
+    $('#add-err').hidden = true;
+    if (typeof d.showModal !== 'function') { const u = window.prompt('Link de la web'); if (u && !addPage(u)) toast('Ese link no parece una web'); return; }
+    d.showModal();
+    $('#add-url').focus();
+  }
+  // Returns false when the text isn't a link, so the box can say so
+  function addPage(text) {
+    const url = cleanUrl(text);
+    if (!url) return false;
+    const d = $('#add');
+    if (d.open) d.close();
+    const k = siteKey(url);
+    const ref = REFS.find(r => r.url && siteKey(r.url) === k);
+    if (ref) { toast('Ya estaba en Referencias'); setTab('refs'); openDetail(ref.id); return true; }
+    if (!ADDED.some(a => siteKey(a.url) === k)) {
+      ADDED = [{ url, at: new Date().toISOString() }, ...ADDED];
+      store.set('added', ADDED);
+    }
+    window.open(issueUrl(url), '_blank', 'noopener');
+    Object.assign(S, { q: '', rubro: null, tag: null, atusOnly: false, favOnly: false });
+    $('#q').value = '';
+    setTab('refs');
+    render();
+    toast('Guardada. En GitHub tocá Create');
+    return true;
+  }
+  function removeAdded(url) {
+    ADDED = ADDED.filter(a => a.url !== url);
+    store.set('added', ADDED);
+    S.mix.delete('add:' + url);
+    store.set('mix', [...S.mix]);
+    render();
+    toast('Sacada de Referencias');
+  }
+
+  const allRefs = () => [...pendingRefs(), ...REFS, ...favRefs()];
   const findRef = id => allRefs().find(r => r.id === id);
 
   function render() {
@@ -260,7 +338,7 @@
   }
 
   function renderCounts() {
-    $('#n-refs').textContent = pad(REFS.length + L.saved.length);
+    $('#n-refs').textContent = pad(REFS.length + L.saved.length + ADDED.length);
     $('#n-mix').textContent = S.mix.size ? pad(S.mix.size) : '';
     const fresh = liveAll().filter(i => Date.now() - i._t < 7 * 864e5).length;
     $('#n-live').textContent = fresh ? fmtN(fresh) : '';
@@ -284,7 +362,7 @@
   }
 
   function visibleRefs() {
-    let list = allRefs().filter(r => (!S.favOnly || r.fav) && (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
+    let list = allRefs().filter(r => (!S.favOnly || (r.fav && !r.pending)) && (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
     const groups = parseQuery(S.q);
     if (!groups.length) return list;
     return list.map(r => [r, matchScore(r._f, groups)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([r]) => r);
@@ -299,12 +377,20 @@
   }
 
   const shotsOf = r => (r.fav ? (r.image ? [r.image] : []) : arr(r.shots));
+  // mshots answers with a 400×300 "generating" picture until the real screenshot is ready
+  function retryShot(img, n) {
+    img.addEventListener('load', () => {
+      if (img.naturalWidth !== 400 || img.naturalHeight !== 300 || n >= 8) return;
+      setTimeout(() => { retryShot(img, n + 1); img.src = img.src.replace(/&r=\d+$/, '') + '&r=' + (n + 1); }, 4000);
+    }, { once: true });
+  }
   function refCard(r) {
     const shots = shotsOf(r);
     let imgA = null, imgB = null;
     if (shots[0]) {
       imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null });
       imgA.addEventListener('error', () => imgA.replaceWith(placeholder(r.name, r.palette)), { once: true });
+      if (r.pending) retryShot(imgA, 0);
     }
     if (shots[1]) {
       imgB = h('img', { class: 'alt', src: imgSrc(shots[1]), alt: '', loading: 'lazy', decoding: 'async' });
@@ -315,7 +401,7 @@
     const fonts = arr(r.fonts).map(fontName).filter(Boolean);
     return h('article', { class: 'card' },
       h('button', { class: 'shot', type: 'button', 'aria-label': 'Ver ' + r.name, 'data-key': 'card:' + r.id, onclick: e => openDetail(r.id, e.currentTarget) },
-        imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : r.fav ? h('span', { class: 'badge' }, '★') : null),
+        imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : r.pending ? h('span', { class: 'badge' }, 'Nueva') : r.fav ? h('span', { class: 'badge' }, '★') : null),
       h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, r.fav ? r.source : host(r.url)) : null),
       (hexes.length || fonts.length) ? h('div', { class: 'card-dna' },
         hexes.length ? h('span', { class: 'sws' }, hexes.map(x => h('i', { style: { background: x } }))) : null,
@@ -456,6 +542,7 @@
 
   function dnaList(r) {
     const rows = [];
+    if (r.pending) return h('dl', { class: 'dl' }, h('dt', null, 'Estado'), h('dd', null, 'Se está sumando. Cuando el robot termina aparece con captura, tipografías y colores en todos tus dispositivos.'));
     if (r.fav) {
       if (r.source) rows.push(['Galería', r.source]);
       if (arr(r.cats).length) rows.push(['Temas', arr(r.cats).join(', ')]);
@@ -500,7 +587,9 @@
           h('button', { class: 'btn solid', type: 'button', 'data-tip': 'Para pegarle a Claude', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
           h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', 'data-tip': inMix ? 'Sacar de Mezclar' : 'Sumar a Mezclar', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
           safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Ver la web en vivo' }, 'Abrir ↗') : null,
-          r.fav ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
+          r.pending ? h('a', { class: 'btn ghost', href: issueUrl(r.url), target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Si no tocaste Create' }, 'Subir ↗') : null,
+          r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => removeAdded(r.url) }, 'Quitar') : null,
+          r.fav && !r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
         tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
           class: 'tag', type: 'button',
           onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
@@ -542,7 +631,7 @@
       const shot = shotsOf(r)[0];
       const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null }) : placeholder(r.name, r.palette);
       return h('button', { type: 'button', class: 'pick', 'aria-pressed': String(on), 'data-key': 'mix:' + r.id, title: r.name, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
-        h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, (r.fav ? '★ ' : '') + r.name));
+        h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, (r.fav && !r.pending ? '★ ' : '') + r.name));
     }));
     // Each aspect: pick a reference and/or write anything
     put($('#mix-aspects'), ASPECTS.map((a, i) => {
@@ -1002,6 +1091,26 @@
     $('#mix-taste').addEventListener('change', e => { store.set('mixTaste', e.target.checked); renderMixOut(); });
     // Clicking the dark backdrop around the confirm dialog cancels it
     $('#confirm').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+    $('#add-open').addEventListener('click', () => openAdd());
+    $('#add-no').addEventListener('click', () => $('#add').close());
+    $('#add-url').addEventListener('input', () => { $('#add-err').hidden = true; });
+    $('#add-form').addEventListener('submit', e => {
+      e.preventDefault();
+      if (!addPage($('#add-url').value)) { $('#add-err').hidden = false; $('#add-url').focus(); }
+    });
+    // A click outside the box (on the dark backdrop) closes it; the padding inside doesn't
+    $('#add').addEventListener('click', e => {
+      const b = e.currentTarget.getBoundingClientRect();
+      if (e.target === e.currentTarget && (e.clientX < b.left || e.clientX > b.right || e.clientY < b.top || e.clientY > b.bottom)) e.currentTarget.close();
+    });
+    // Pasting a link anywhere in Referencias (outside a field) opens the box with it
+    document.addEventListener('paste', e => {
+      if (S.tab !== 'refs' || S.sheet || isTyping(e.target) || $('#add').open || $('#confirm').open) return;
+      const url = cleanUrl(e.clipboardData && e.clipboardData.getData('text'));
+      if (!url) return;
+      e.preventDefault();
+      openAdd(url);
+    });
     $('#mix-copy').addEventListener('click', () => copy(mixPrompt(), 'Prompt copiado'));
     $('#mix-reset').addEventListener('click', resetMix);
 
