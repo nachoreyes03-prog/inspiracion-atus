@@ -168,6 +168,32 @@ function analyze() {
   };
 }
 
+// Runs inside the page with the screenshot: its most common color. Catches backgrounds painted by
+// a canvas or an image, which the DOM doesn't show. Resolves null if the page's CSP blocks it.
+function dominantColor(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const w = 144, h = 90, cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      const cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.drawImage(img, 0, 0, w, h);
+      const d = cx.getImageData(0, 0, w, h).data, buckets = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        const k = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+        const b = buckets.get(k) || [0, 0, 0, 0];
+        b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++;
+        buckets.set(k, b);
+      }
+      const top = [...buckets.values()].sort((x, y) => y[3] - x[3])[0];
+      resolve({ hex: '#' + top.slice(0, 3).map(v => Math.round(v / top[3]).toString(16).padStart(2, '0')).join('').toUpperCase(), share: top[3] / (w * h) });
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
 /* ---------- turning the analysis into a reference ---------- */
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const dist = (a, b) => { const x = rgb(a), y = rgb(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
@@ -207,10 +233,13 @@ function pickFonts(a) {
   return out;
 }
 
-function pickPalette(a) {
+// The background: the screenshot's main color when it covers a quarter of it, else the DOM's
+const fondoOf = (a, shotBg) => (shotBg && shotBg.share >= 0.25 ? shotBg.hex : a.bgs[0] && a.bgs[0][0]);
+
+function pickPalette(a, shotBg) {
   const out = [];
   const push = (h, label) => { if (h && !out.some(o => dist(o.h, h) < 40)) out.push({ h, label }); };
-  const fondo = a.bgs[0] && a.bgs[0][0];
+  const fondo = fondoOf(a, shotBg);
   push(fondo, 'fondo');
   const texto = (a.texts.find(([h]) => !fondo || dist(h, fondo) > 60) || [])[0];
   push(texto, 'texto');
@@ -288,9 +317,13 @@ async function main() {
     const ids = new Set(data.refs.map(r => r.id));
     for (let i = 2; ids.has(id); i++) id = id.replace(/-\d+$/, '') + '-' + i;
 
+    const bgRes = await c.send('Runtime.evaluate', { expression: `(${dominantColor})(${JSON.stringify('data:image/jpeg;base64,' + shot1.toString('base64'))})`, awaitPromise: true, returnByValue: true }).catch(() => null);
+    const shotBg = bgRes && bgRes.result && bgRes.result.value;
+    a.shotBg = shotBg;
+
     const fonts = pickFonts(a);
-    const palette = pickPalette(a);
-    const fondo = a.bgs[0] && a.bgs[0][0];
+    const palette = pickPalette(a, shotBg);
+    const fondo = fondoOf(a, shotBg);
     const tags = fondo ? [lum(fondo) < 0.35 ? 'oscuro' : 'claro'] : [];
     const stack = a.stack.join(' · ');
     const shots = [`img/${id}.jpg`];
