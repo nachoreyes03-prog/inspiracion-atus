@@ -256,9 +256,20 @@ async function main() {
     const nav = await c.send('Page.navigate', { url });
     if (nav.errorText) throw new Error(`no pude abrir la página (${nav.errorText})`);
     await loaded;
-    await sleep(7000); // intros, loaders and fades run in real time
+    await sleep(4000);
     await c.send('Runtime.evaluate', { expression: `document.documentElement.appendChild(Object.assign(document.createElement('style'), { textContent: ${JSON.stringify(HIDE_BANNERS)} }))` });
-    await sleep(500);
+    // Intros and loaders run in real time and slower here, without a GPU (Lusion's took ~9 s):
+    // give them 10 s, then wait until two screenshots in a row weigh about the same
+    await sleep(6000);
+    const snap = async () => Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })).data, 'base64').length;
+    let prev = await snap();
+    for (let i = 0; i < 8; i++) {
+      await sleep(2500);
+      const cur = await snap();
+      const ratio = cur / prev;
+      prev = cur;
+      if (ratio > 0.85 && ratio < 1.15) break;
+    }
 
     const res = await c.send('Runtime.evaluate', { expression: `(${analyze})()`, returnByValue: true });
     if (res.exceptionDetails) throw new Error('no pude leer la página');
