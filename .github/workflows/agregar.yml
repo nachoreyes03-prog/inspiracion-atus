@@ -1,7 +1,8 @@
-name: Agregar referencia
+name: Agregar o sacar referencias
 
-# The "+ Agregar" button opens a GitHub issue titled "Agregar: site.com" with the link in the body.
-# This saves that site in data.js (screenshots, fonts, colors) and answers the issue.
+# The "+ Agregar" button opens a GitHub issue titled "Agregar: site.com" with the link in the body:
+# the add job saves that site in data.js (screenshots, fonts, colors) and answers the issue.
+# The "Sacar" button opens one titled "Sacar: Name" with "id: <id>": the remove job deletes it.
 on:
   issues:
     types: [opened]
@@ -81,3 +82,49 @@ jobs:
           ERROR: ${{ steps.add.outputs.error }}
           SAVED: ${{ steps.save.outcome }}
           SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+  remove:
+    if: github.event_name == 'issues' && github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Sacar')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sacarla de data.js
+        id: remove
+        run: node scripts/remove-ref.mjs
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+
+      - name: Guardar
+        id: save
+        if: steps.remove.outputs.status == 'removed'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A data.js index.html img
+          git commit -m "Referencia sacada: $NAME"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+        env:
+          NAME: ${{ steps.remove.outputs.name }}
+
+      - name: Responder y cerrar el issue
+        if: always()
+        run: |
+          case "$STATUS" in
+            removed) [ "$SAVED" = success ] || { gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "No pude guardar el cambio en el repo. El detalle está en la pestaña Actions."; exit 1; }
+                     MSG="Listo: saqué **$NAME** de Referencias. En uno o dos minutos desaparece de todos tus dispositivos." ;;
+            missing) MSG="**$NAME** ya no estaba en Referencias." ;;
+            *)       MSG="No pude sacarla: ${ERROR:-el robot falló}. El detalle está en la pestaña Actions." ;;
+          esac
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "$MSG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          STATUS: ${{ steps.remove.outputs.status }}
+          NAME: ${{ steps.remove.outputs.name }}
+          ERROR: ${{ steps.remove.outputs.error }}
+          SAVED: ${{ steps.save.outcome }}

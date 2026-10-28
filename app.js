@@ -64,12 +64,18 @@
   /* ---------- data ---------- */
   const DATA = window.ATUS_DATA || null;
   const seenIds = new Set();
-  const REFS = (DATA && Array.isArray(DATA.refs) ? DATA.refs : []).filter(r => r && r.name).map((r, i) => {
+  const ALL_REFS = (DATA && Array.isArray(DATA.refs) ? DATA.refs : []).filter(r => r && r.name).map((r, i) => {
     let id = String(r.id || slug(r.name) || 'ref-' + i);
     while (seenIds.has(id)) id += '-' + i;
     seenIds.add(id);
     return Object.assign({}, r, { id });
   });
+  // "Sacar" hides a reference on this device at once; the robot then deletes it from data.js.
+  // Ids the robot already deleted drop out of the list.
+  const HIDDEN = new Set(store.get('removed', []).filter(id => ALL_REFS.some(r => r.id === id)));
+  store.set('removed', [...HIDDEN]);
+  const REFS = ALL_REFS.filter(r => !HIDDEN.has(r.id));
+  const syncRefs = () => REFS.splice(0, REFS.length, ...ALL_REFS.filter(r => !HIDDEN.has(r.id)));
   const TASTE = DATA && DATA.taste ? DATA.taste : null;
 
   /* ---------- search: a rubro in Spanish or English, ranked ---------- */
@@ -139,7 +145,7 @@
     return total;
   }
 
-  REFS.forEach(r => {
+  ALL_REFS.forEach(r => {
     r._f = {
       q: '', name: field(r.name, r.rubro), cats: field(arr(r.tags), r.rubro),
       // Palette entries carry color names like "claro"; only the hex goes into search so they don't pass as a mood
@@ -259,7 +265,7 @@
     if (!SHARED_HOSTS.test(hst)) return hst;
     try { return hst + new URL(u).pathname.replace(/\/+$/, '').toLowerCase(); } catch { return hst; }
   };
-  const refKeys = new Set(REFS.map(r => r.url && siteKey(r.url)).filter(Boolean));
+  const refKeys = new Set(ALL_REFS.map(r => r.url && siteKey(r.url)).filter(Boolean));
   let ADDED = store.get('added', []).filter(a => a && safeHref(a.url) && !refKeys.has(siteKey(a.url)));
   store.set('added', ADDED);
   const nameOfHost = hst => { const w = hst.split('.')[0] || hst; return w.charAt(0).toUpperCase() + w.slice(1); };
@@ -316,6 +322,28 @@
     render();
     toast('Guardada. En GitHub tocá Create');
     return true;
+  }
+  // A reference from data.js: hidden here at once, and the issue that opens lets the robot
+  // (scripts/remove-ref.mjs) delete it everywhere. Undo only brings it back on this device.
+  const removeIssueUrl = r => `https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: 'Sacar: ' + r.name, body: `id: ${r.id}\n${r.url || ''}`, labels: 'sacar' });
+  function removeRef(r) {
+    confirmBox(`¿Sacar ${r.name} de Referencias? Después tocá Create en GitHub para sacarla de todos tus dispositivos.`, 'Sí, sacar', () => {
+      HIDDEN.add(r.id);
+      store.set('removed', [...HIDDEN]);
+      syncRefs();
+      const wasInMix = S.mix.delete(r.id);
+      store.set('mix', [...S.mix]);
+      window.open(removeIssueUrl(r), '_blank', 'noopener');
+      if (S.sheet) requestClose();
+      render();
+      toast('Sacada. En GitHub tocá Create', { label: 'Deshacer', fn: () => {
+        HIDDEN.delete(r.id);
+        store.set('removed', [...HIDDEN]);
+        syncRefs();
+        if (wasInMix) { S.mix.add(r.id); store.set('mix', [...S.mix]); }
+        render();
+      } });
+    });
   }
   function removeAdded(url) {
     ADDED = ADDED.filter(a => a.url !== url);
@@ -588,8 +616,9 @@
           h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', 'data-tip': inMix ? 'Sacar de Mezclar' : 'Sumar a Mezclar', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
           safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Ver la web en vivo' }, 'Abrir ↗') : null,
           r.pending ? h('a', { class: 'btn ghost', href: issueUrl(r.url), target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Si no tocaste Create' }, 'Subir ↗') : null,
-          r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => removeAdded(r.url) }, 'Quitar') : null,
-          r.fav && !r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => { toggleSave({ link: r.url }); } }, 'Quitar ★') : null),
+          r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => removeAdded(r.url) }, 'Sacar') : null,
+          r.fav && !r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de favoritos', onclick: () => { toggleSave({ link: r.url }); } }, 'Sacar') : null,
+          !r.fav ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'De todos tus dispositivos', onclick: () => removeRef(r) }, 'Sacar') : null),
         tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
           class: 'tag', type: 'button',
           onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
