@@ -168,7 +168,7 @@ function pickName(a, url) {
   const label = hostOf(url).split('.')[0];
   const squash = s => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
   if (a.site && a.site.length <= 40) return a.site.trim();
-  const parts = a.title.split(/\s+[|–—·:•-]\s+/).map(s => s.trim()).filter(Boolean);
+  const parts = a.title.split(/\s+[|–—·•-]\s+|:\s+/).map(s => s.trim()).filter(Boolean);
   const own = parts.find(p => squash(p) && (squash(label).includes(squash(p)) || squash(p).includes(squash(label))));
   const notGeneric = parts.find(p => !/^(home|inicio|index|welcome|bienvenid[oa]s?|portfolio)$/i.test(p));
   const name = own || notGeneric || parts[0] || '';
