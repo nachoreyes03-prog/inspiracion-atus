@@ -50,7 +50,7 @@ img { max-width: 100%; }
 /* Top bar */
 .top { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--bg); border-bottom: 1px solid var(--line); }
 .top-in { display: flex; align-items: center; gap: 0 24px; min-height: 56px; flex-wrap: wrap; }
-.mark { font-weight: 700; font-size: 1.0625rem; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; white-space: nowrap; margin-right: auto; }
+.mark { font-weight: 700; font-size: 1.0625rem; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .tabs { display: flex; flex-wrap: wrap; gap: 2px; }
 .tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; font: 500 0.875rem/1 var(--font); color: var(--ink-2); padding: 19px 10px 17px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; transition: color .15s var(--ease), border-color .15s var(--ease); }
 .tab:hover { color: var(--ink); }
@@ -265,6 +265,16 @@ img { max-width: 100%; }
 .confirm[open] { animation: fade .18s var(--ease); }
 .confirm p { margin: 0 0 20px; font-size: 1.0625rem; line-height: 1.4; text-wrap: pretty; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Web design | Graphic design: the two halves of the site, next to the name */
+.modes { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; margin-right: auto; }
+.mode { appearance: none; border: 0; border-radius: 999px; background: none; color: var(--ink-2); font: 500 0.8125rem/1 var(--font); padding: 8px 12px; cursor: pointer; white-space: nowrap; transition: background-color .15s var(--ease), color .15s var(--ease); }
+.mode:hover { color: var(--ink); }
+.mode[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+body[data-mode="graphic"] .tabs { display: none; }
+/* Graphic design: categories and "+ Agregar" on one line */
+.g-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.g-head .scroll-row { flex: 1; min-width: 0; margin-right: 0; padding-right: 0; }
+.confirm .add-cat { margin-top: 10px; }
 /* Folders, one per client: above the filters, bigger than a chip */
 .folders { display: flex; gap: 8px; align-items: center; }
 .folder { appearance: none; display: inline-flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: 500 0.9375rem/1 var(--font); padding: 11px 16px; cursor: pointer; white-space: nowrap; transition: border-color .15s var(--ease), background-color .15s var(--ease), color .15s var(--ease); }
@@ -360,3 +370,7 @@ body.has-sync main { padding-bottom: 72px; }
 .aspect .ctl { display: grid; gap: 6px; min-width: 0; }
 @media (max-width: 520px) { .aspect > label { padding-top: 0; } }
 .taste { padding-top: 28px; }
+@media (max-width: 760px) {
+  .top-in { gap: 0 12px; }
+  .mode { padding: 7px 9px; font-size: 0.75rem; }
+}

@@ -204,7 +204,6 @@ window.ATUS_DATA = {
       "name": "Juan Mora Romero",
       "url": "https://www.juanmoraromero.com/",
       "rubro": "Portfolio",
-      "folders": ["propia"],
       "atus": true,
       "tags": ["oscuro","grotesk","grilla","grano","portfolio"],
       "likes": "Buena para Atus.",
@@ -370,6 +369,72 @@ window.ATUS_DATA = {
       "note": "Componentes de UI para ver y copiar: heros, menús, botones, cards. Está buena para components.",
       "bestFor": ["componentes","UI"],
       "fav": false
+    }
+  ],
+  "graphic": [
+    {
+      "id": "g-creatoom",
+      "name": "Creatoom",
+      "url": "https://creatoom.com/product-category/items/free-mockups/",
+      "category": "Mockups",
+      "note": "Mockups de packaging, papelería, dispositivos y escenas armadas. Muchos gratis.",
+      "shots": ["img/g-creatoom.jpg"]
+    },
+    {
+      "id": "g-texturefabrik",
+      "name": "Texture Fabrik",
+      "url": "https://texturefabrik.com/gallery/",
+      "category": "Texturas",
+      "note": "Texturas escaneadas (papel, tinta, fotocopia), patrones y vectores gratis.",
+      "shots": ["img/g-texturefabrik.jpg"]
+    },
+    {
+      "id": "g-logggos",
+      "name": "Logggos",
+      "url": "https://www.logggos.club/",
+      "category": "Logos",
+      "note": "Logos bien resueltos ordenados por rubro, tema, tipografía y color.",
+      "shots": ["img/g-logggos.jpg"]
+    },
+    {
+      "id": "g-logobook",
+      "name": "Logobook",
+      "url": "https://logobook.com/",
+      "category": "Logos",
+      "note": "Archivo de símbolos y marcas por forma, objeto, naturaleza, animal y letra.",
+      "shots": ["img/g-logobook.jpg"]
+    },
+    {
+      "id": "g-uncut",
+      "name": "Uncut",
+      "url": "https://uncut.wtf/",
+      "category": "Tipografías",
+      "note": "Tipografías libres y contemporáneas: sans, serif, mono y display.",
+      "shots": ["img/g-uncut.jpg"]
+    },
+    {
+      "id": "g-generativefonts",
+      "name": "Generative Fonts",
+      "url": "https://www.generativefonts.xyz/",
+      "category": "Tipografías",
+      "note": "Tipografías generativas y experimentales, con filtros que deforman los glifos.",
+      "shots": ["img/g-generativefonts.jpg"]
+    },
+    {
+      "id": "g-wordmark",
+      "name": "Wordmark",
+      "url": "https://wordmark.it/",
+      "category": "Tipografías",
+      "note": "Escribís una palabra y la ves con todas las fuentes de tu compu.",
+      "shots": ["img/g-wordmark.jpg"]
+    },
+    {
+      "id": "g-colorslol",
+      "name": "colors.lol",
+      "url": "https://colors.lol/",
+      "category": "Colores",
+      "note": "Paletas de tres o cuatro colores con sus hex y nombres absurdos.",
+      "shots": ["img/g-colorslol.jpg"]
     }
   ],
   "taste": {

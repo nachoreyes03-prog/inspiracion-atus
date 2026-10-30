@@ -11,14 +11,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=20261030-2">
-<link rel="stylesheet" href="botones.css?v=20261030-2">
+<link rel="stylesheet" href="styles.css?v=20261030-4">
+<link rel="stylesheet" href="botones.css?v=20261030-4">
 </head>
 <body>
 
 <header class="top">
   <div class="wrap top-in">
     <a class="mark" href="#referencias" id="mark">Inspiración Atus</a>
+    <div class="modes" role="group" aria-label="Sección">
+      <button class="mode" type="button" data-mode="web" aria-pressed="true">Web design</button>
+      <button class="mode" type="button" data-mode="graphic" aria-pressed="false">Graphic design</button>
+    </div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" type="button" data-tab="refs" aria-controls="view-refs">Referencias <span class="n" id="n-refs"></span></button>
       <button class="tab" role="tab" type="button" data-tab="discover" aria-controls="view-discover">Descubrir <span class="n" id="n-live"></span></button>
@@ -81,6 +85,16 @@
     </div>
   </section>
 
+  <section class="view wrap" id="view-graphic" role="tabpanel" aria-label="Graphic design" hidden>
+    <div class="toolbar">
+      <div class="g-head">
+        <div class="frow scroll-row" id="g-cats"></div>
+        <div data-pour="below"><button class="btn solid" type="button" id="g-add" data-tip="Pegá el link de un recurso">+ Agregar</button></div>
+      </div>
+    </div>
+    <div class="grid" id="g-grid"></div>
+  </section>
+
   <section class="view wrap" id="view-taste" role="tabpanel" aria-label="Gusto" hidden>
     <div class="taste" id="taste-body"></div>
   </section>
@@ -104,6 +118,7 @@
   <form id="add-form" novalidate>
     <label class="fld"><span id="add-title">Link de la web</span><input class="in" id="add-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…"></label>
     <div class="frow pick-folders" id="add-folders"></div>
+    <input class="in add-cat" id="add-cat" autocomplete="off" maxlength="30" placeholder="U otra categoría" hidden>
     <p class="add-err" id="add-err" role="alert" hidden>Ese link no parece una web. Probá copiándolo de nuevo.</p>
     <p class="add-note">Después tocá <b>Create</b> en GitHub y queda en todos tus dispositivos.</p>
     <div class="confirm-actions">
@@ -140,8 +155,8 @@
 </dialog>
 
 <!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
-<script src="data.js?v=20261030-2"></script>
-<script src="botones.js?v=20261030-2"></script>
-<script src="app.js?v=20261030-2"></script>
+<script src="data.js?v=20261030-4"></script>
+<script src="botones.js?v=20261030-4"></script>
+<script src="app.js?v=20261030-4"></script>
 </body>
 </html>

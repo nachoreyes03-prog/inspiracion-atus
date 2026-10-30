@@ -191,7 +191,7 @@
 
   /* ---------- state ---------- */
   const S = {
-    tab: 'refs', q: '', rubro: null, tag: null, favOnly: false, folder: store.get('folder', null),
+    tab: 'refs', q: '', rubro: null, tag: null, atusOnly: false, favOnly: false, folder: store.get('folder', null),
     mix: new Set(store.get('mix', [])),
     aspects: store.get('aspects', {}),
     custom: store.get('mixCustom', {}),
@@ -251,8 +251,9 @@
   const promptOf = r => (typeof r.prompt === 'string' && r.prompt.trim()) ? r.prompt.trim() : buildPrompt(r);
 
   /* ---------- tabs + url ---------- */
-  const TABS = ['refs', 'discover', 'mix', 'taste'];
-  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', taste: 'gusto' };
+  // 'graphic' is the Graphic design half of the site; the other four are Web design
+  const TABS = ['refs', 'discover', 'mix', 'taste', 'graphic'];
+  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', taste: 'gusto', graphic: 'grafico' };
   const tabFromHash = hash => TABS.find(t => '#' + TAB_HASH[t] === hash) || null;
   const setHash = hash => { try { history.replaceState(history.state, '', hash); } catch { /* file:// quirks */ } };
 
@@ -263,6 +264,9 @@
     for (const b of $$('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
     for (const v of $$('.view')) v.hidden = v.id !== 'view-' + t;
     if (t === 'discover') renderDiscover();
+    if (t === 'graphic') renderGraphic(); else store.set('webTab', t);
+    document.body.dataset.mode = t === 'graphic' ? 'graphic' : 'web';
+    for (const b of $$('.mode')) b.setAttribute('aria-pressed', String(b.dataset.mode === document.body.dataset.mode));
     if (!opts || !opts.keepHash) setHash('#' + TAB_HASH[t]);
     if (!opts || opts.scroll !== false) window.scrollTo(0, 0);
   }
@@ -312,12 +316,14 @@
   function pendingChanges() {
     const ch = {};
     const inRefs = link => ALL_REFS.some(r => r.url === link);
-    const adds = ADDED.map(a => ({ url: a.url, folders: arr(a.folders) }));
+    const live = new Set(folderList().map(f => f.id));
+    const okIds = list => arr(list).filter(id => live.has(id)); // a folder deleted here drops out
+    const adds = ADDED.map(a => ({ url: a.url, folders: okIds(a.folders) }));
     if (adds.length) ch.adds = adds;
     if (HIDDEN.size) ch.removes = [...HIDDEN];
     const favs = L.saved.filter(s => !inRefs(s.link)).map(s => ({
       link: s.link, name: s.name || s.title, source: s.source || '', image: s.image || '', cats: arr(s.cats).slice(0, 5),
-      desc: String(s.desc || s.tagline || '').slice(0, 200), folders: arr(s.folders),
+      desc: String(s.desc || s.tagline || '').slice(0, 200), folders: okIds(s.folders),
     }));
     if (favs.length) ch.favs = favs;
     const fo = {};
@@ -327,10 +333,13 @@
     if (PEND.folderRemoves.length) fo.remove = [...PEND.folderRemoves];
     if (Object.keys(fo).length) ch.folders = fo;
     if (Object.keys(PEND.refs).length) ch.refs = Object.assign({}, PEND.refs);
+    if (G_ADDED.length) ch.graphicAdds = G_ADDED.map(a => ({ url: a.url, category: a.category || 'Otros' }));
+    if (G_HIDDEN.size) ch.graphicRemoves = [...G_HIDDEN];
     return ch;
   }
   const countChanges = ch => arr2(ch.adds).length + arr2(ch.removes).length + arr2(ch.favs).length + Object.keys(ch.refs || {}).length
-    + (ch.folders ? arr2(ch.folders.add).length + arr2(ch.folders.rename).length + arr2(ch.folders.remove).length : 0);
+    + (ch.folders ? arr2(ch.folders.add).length + arr2(ch.folders.rename).length + arr2(ch.folders.remove).length : 0)
+    + arr2(ch.graphicAdds).length + arr2(ch.graphicRemoves).length;
   function changeLines(ch) {
     const fn = ids => (ids.length ? ` → ${ids.map(folderName).join(', ')}` : '');
     const refName = id => (ALL_REFS.find(r => r.id === id) || {}).name || id;
@@ -344,6 +353,8 @@
         ...arr2(ch.folders.remove).map(id => `- Borrar carpeta: ${(DATA_FOLDERS.find(f => f.id === id) || {}).name || id}`),
       ] : []),
       ...Object.entries(ch.refs || {}).map(([id, list]) => `- ${refName(id)}${fn(list) || ' → sin carpeta'}`),
+      ...arr2(ch.graphicAdds).map(a => `- Agregar a Graphic design (${a.category}): ${a.url}`),
+      ...arr2(ch.graphicRemoves).map(id => `- Sacar de Graphic design: ${(ALL_GRAPHIC.find(g => g.id === id) || {}).name || id}`),
     ];
   }
   // GitHub refuses very long links: big batches go without descriptions, then in parts
@@ -412,8 +423,19 @@
     const d = $('#add');
     $('#add-url').value = prefill || '';
     $('#add-err').hidden = true;
-    // Adding from inside a folder puts the page in it
-    folderToggles($('#add-folders'), S.tab === 'refs' && S.folder ? [S.folder] : []);
+    const graphic = S.tab === 'graphic';
+    $('#add-cat').hidden = !graphic;
+    $('#add-cat').value = '';
+    if (graphic) {
+      // Graphic design: one category (the one on screen, if any), or a new one typed below
+      put($('#add-folders'), graphicCats().map(([c]) => h('button', {
+        class: 'chip', type: 'button', 'data-id': c, 'aria-pressed': String(S.gcat === c),
+        onclick: e => { for (const b of $$('.chip', $('#add-folders'))) b.setAttribute('aria-pressed', String(b === e.currentTarget && b.getAttribute('aria-pressed') !== 'true')); },
+      }, c)));
+    } else {
+      // Adding from inside a folder puts the page in it
+      folderToggles($('#add-folders'), S.tab === 'refs' && S.folder ? [S.folder] : []);
+    }
     if (typeof d.showModal !== 'function') { const u = window.prompt('Link de la web'); if (u && !addPage(u)) toast('Ese link no parece una web'); return; }
     d.showModal();
     $('#add-url').focus();
@@ -424,6 +446,12 @@
     if (!url) return false;
     const d = $('#add');
     const folders = pickedFolders($('#add-folders'));
+    if (S.tab === 'graphic') {
+      const typed = $('#add-cat').value.trim().slice(0, 30);
+      if (d.open) d.close();
+      addGraphic(url, typed ? typed.charAt(0).toUpperCase() + typed.slice(1) : folders[0]);
+      return true;
+    }
     if (d.open) d.close();
     const k = siteKey(url);
     const ref = REFS.find(r => r.url && siteKey(r.url) === k);
@@ -475,6 +503,88 @@
     store.set('mix', [...S.mix]);
     render();
     toast('Sacada de Referencias');
+  }
+
+  /* ---------- Graphic design: resources by category (mockups, textures, logos, fonts…) ---------- */
+  // Same idea as references: data.js has them; adding or taking one out shows here at once and goes
+  // up with "Subir" (the robot screenshots new ones)
+  const ALL_GRAPHIC = (DATA && Array.isArray(DATA.graphic) ? DATA.graphic : []).filter(g => g && g.id && safeHref(g.url));
+  const G_HIDDEN = new Set(store.get('gremoved', []).filter(id => ALL_GRAPHIC.some(g => g.id === id)));
+  store.set('gremoved', [...G_HIDDEN]);
+  let G_ADDED = store.get('gadded', []).filter(a => a && safeHref(a.url) && !ALL_GRAPHIC.some(g => siteKey(g.url) === siteKey(a.url)));
+  store.set('gadded', G_ADDED);
+  const G_ORDER = ['Mockups', 'Texturas', 'Logos', 'Tipografías', 'Colores'];
+  const graphicList = () => [
+    ...G_ADDED.map(a => ({ id: 'gadd:' + a.url, pending: true, name: nameOfHost(host(a.url)), url: a.url, category: a.category || 'Otros', note: '',
+      image: 'https://s.wordpress.com/mshots/v1/' + encodeURIComponent(a.url) + '?w=1440&h=900' })),
+    ...ALL_GRAPHIC.filter(g => !G_HIDDEN.has(g.id)),
+  ];
+  function graphicCats() {
+    const counts = new Map();
+    for (const g of graphicList()) counts.set(g.category || 'Otros', (counts.get(g.category || 'Otros') || 0) + 1);
+    const rank = c => (G_ORDER.includes(c) ? G_ORDER.indexOf(c) : 99);
+    return [...counts].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], 'es'));
+  }
+  function graphicCard(g) {
+    const src = g.pending ? g.image : imgSrc(arr(g.shots)[0]);
+    let img = null;
+    if (src) {
+      img = h('img', { src, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: g.pending ? 'no-referrer' : null });
+      img.addEventListener('error', () => img.replaceWith(placeholder(g.name)), { once: true });
+      if (g.pending) retryShot(img, 0);
+    }
+    return h('article', { class: 'card' },
+      h('a', { class: 'shot', href: g.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Abrir ${g.name}` },
+        img || placeholder(g.name), g.pending ? h('span', { class: 'badge' }, 'Nueva') : null),
+      h('div', { class: 'card-head' }, h('h3', null, g.name), h('span', { class: 'dom' }, g.category || 'Otros')),
+      g.note ? h('p', { class: 'likes' }, g.note) : null,
+      h('div', { class: 'card-actions', 'data-pour': 'contain' },
+        h('a', { class: 'btn sm', href: g.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': host(g.url) }, 'Abrir ↗'),
+        h('button', { class: 'btn sm ghost', type: 'button', 'data-tip': g.pending ? 'Sacar de acá' : 'De todos tus dispositivos', onclick: () => removeGraphic(g) }, 'Sacar')));
+  }
+  function renderGraphic() {
+    const cats = graphicCats();
+    if (S.gcat && !cats.some(([c]) => c === S.gcat)) S.gcat = null;
+    const pick = c => () => { S.gcat = c; renderGraphic(); restoreFocus('gcat:' + (c || '')); };
+    put($('#g-cats'),
+      chip('Todas', !S.gcat, pick(null), 'gcat:'),
+      cats.map(([c, n]) => chip([c, ' ', h('span', { class: 'c' }, n)], S.gcat === c, pick(S.gcat === c ? null : c), 'gcat:' + c)));
+    const list = graphicList().filter(g => !S.gcat || (g.category || 'Otros') === S.gcat);
+    put($('#g-grid'), list.length ? list.map(graphicCard) : notice('Todavía no hay nada acá', 'Sumá recursos con + Agregar.'));
+  }
+  function removeGraphic(g) {
+    if (g.pending) {
+      G_ADDED = G_ADDED.filter(a => a.url !== g.url);
+      store.set('gadded', G_ADDED);
+      renderGraphic();
+      renderSync();
+      toast('Sacado');
+      return;
+    }
+    confirmBox(`¿Sacar ${g.name} de Graphic design? Después tocá Create en GitHub para sacarlo de todos tus dispositivos.`, 'Sí, sacar', () => {
+      G_HIDDEN.add(g.id);
+      store.set('gremoved', [...G_HIDDEN]);
+      upload();
+      renderGraphic();
+      renderSync();
+      toast('Sacado. En GitHub tocá Create', { label: 'Deshacer', fn: () => {
+        G_HIDDEN.delete(g.id);
+        store.set('gremoved', [...G_HIDDEN]);
+        renderGraphic();
+        renderSync();
+      } });
+    });
+  }
+  function addGraphic(url, category) {
+    const k = siteKey(url);
+    const same = graphicList().find(g => siteKey(g.url) === k);
+    if (same) { toast(`Ya estaba: ${same.name}`); return; }
+    G_ADDED = [{ url, category: category || 'Otros', at: new Date().toISOString() }, ...G_ADDED];
+    store.set('gadded', G_ADDED);
+    upload();
+    S.gcat = null;
+    renderGraphic();
+    toast('Guardado. En GitHub tocá Create');
   }
 
   const allRefs = () => [...pendingRefs(), ...REFS, ...favRefs()];
@@ -600,16 +710,18 @@
     for (const r of REFS) for (const t of arr(r.tags)) counts.set(t, (counts.get(t) || 0) + 1);
     const tags = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es')).slice(0, 14).map(([t]) => t);
     const savedN = L.saved.length + REFS.filter(r => r.gallery).length;
+    const atusN = REFS.filter(r => r.atus).length;
     put(box,
-      chip('Todas', !S.favOnly && !S.rubro && !S.tag, () => { S.favOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
+      chip('Todas', !S.atusOnly && !S.favOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.favOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
       savedN ? chip(`★ Guardadas ${savedN}`, S.favOnly, () => { S.favOnly = !S.favOnly; render(); }, 'f:fav') : null,
+      atusN ? chip('Para Atus', S.atusOnly, () => { S.atusOnly = !S.atusOnly; render(); }, 'f:atus') : null,
       rubros.map(rb => chip(rb, S.rubro === rb, () => { S.rubro = S.rubro === rb ? null : rb; render(); }, 'f:r:' + rb)),
       h('span', { class: 'sep', 'aria-hidden': 'true' }),
       tags.map(t => chip('#' + t, S.tag === t, () => { S.tag = S.tag === t ? null : t; render(); }, 'f:t:' + t)));
   }
 
   function visibleRefs() {
-    let list = allRefs().filter(r => (!S.folder || foldersOf(r).includes(S.folder)) && (!S.favOnly || (r.fav && !r.pending) || r.gallery) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
+    let list = allRefs().filter(r => (!S.folder || foldersOf(r).includes(S.folder)) && (!S.favOnly || (r.fav && !r.pending) || r.gallery) && (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
     const groups = parseQuery(S.q);
     if (!groups.length) return list;
     return list.map(r => [r, matchScore(r._f, groups)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([r]) => r);
@@ -1370,6 +1482,9 @@
 
   function boot() {
     for (const b of $$('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
+    // Web design goes back to the tab you were on there
+    for (const b of $$('.mode')) b.addEventListener('click', () => setTab(b.dataset.mode === 'graphic' ? 'graphic' : store.get('webTab', 'refs')));
+    $('#g-add').addEventListener('click', () => openAdd());
     $('#mark').addEventListener('click', e => { e.preventDefault(); setTab('refs'); });
 
     let qT = 0;
@@ -1410,7 +1525,7 @@
     $('#sync-go').addEventListener('click', upload);
     // Pasting a link anywhere in Referencias (outside a field) opens the box with it
     document.addEventListener('paste', e => {
-      if (S.tab !== 'refs' || S.sheet || isTyping(e.target) || $$('dialog[open]').length) return;
+      if ((S.tab !== 'refs' && S.tab !== 'graphic') || S.sheet || isTyping(e.target) || $$('dialog[open]').length) return;
       const url = cleanUrl(e.clipboardData && e.clipboardData.getData('text'));
       if (!url) return;
       e.preventDefault();

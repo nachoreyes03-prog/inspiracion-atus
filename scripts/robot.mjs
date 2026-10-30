@@ -4,7 +4,8 @@
 //
 // The issue body ends with a ```json block: { adds: [{url, folders}], removes: [id], favs: [{link,
 // name, source, image, cats, desc, folders}], folders: {add: [{id, name}], rename: [{id, name}],
-// remove: [id]}, refs: {refId: [folderId]} }. Applying it twice changes nothing.
+// remove: [id]}, refs: {refId: [folderId]}, graphicAdds: [{url, category}], graphicRemoves: [id] }.
+// graphic* are the Graphic design resources (mockups, textures, logos, fonts…). Applying it twice changes nothing.
 // Issues titled "Agregar: site.com" or "Sacar: Name" (from before folders) still work.
 // By hand: Actions → Run workflow with a link and prueba=1 (DRY_RUN) saves nothing; the
 // screenshots and the entries go to out/.
@@ -100,6 +101,8 @@ async function main() {
     reply.push(`Saqué **${r.name}**`);
   }
 
+  const graphic = arr(data.graphic).filter(g => g && g.id);
+
   /* pages added by link: screenshots, fonts and colors */
   const fresh = [];
   const taken = () => new Set([...fresh, ...data.refs].map(r => r.id));
@@ -134,9 +137,36 @@ async function main() {
         reply.push(`No pude agregar ${a.url}: ${e.message}`);
       }
     }
+
+    /* Graphic design resources (mockups, textures, logos, fonts…): taken out, or added with one screenshot */
+    for (const id of arr(ch.graphicRemoves)) {
+      const i = graphic.findIndex(g => g.id === id);
+      if (i < 0) continue;
+      const [g] = graphic.splice(i, 1);
+      goneShots.push(...arr(g.shots));
+      reply.push(`Saqué **${g.name}** de Graphic design`);
+    }
+    const gAdds = arr(ch.graphicAdds).map(a => ({ url: urlOf(a && a.url), category: str(a && a.category).slice(0, 30) || 'Otros' })).filter(a => a.url);
+    for (const a of gAdds) {
+      const same = graphic.find(g => g.url && siteKey(g.url) === siteKey(a.url));
+      if (same) { reply.push(`**${same.name}** ya estaba en Graphic design`); continue; }
+      try {
+        browser = browser || await startBrowser();
+        const s = await captureSite(browser, a.url);
+        const id = 'g-' + idFor(a.url, new Set(graphic.map(g => String(g.id).replace(/^g-/, ''))));
+        const dir = DRY ? OUT : path.join(ROOT, 'img');
+        await mkdir(dir, { recursive: true });
+        await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
+        graphic.unshift({ id, name: s.name, url: a.url, category: a.category, note: '', shots: [`img/${id}.jpg`] });
+        reply.push(`Agregué **${s.name}** a Graphic design (${a.category})`);
+      } catch (e) {
+        reply.push(`No pude agregar ${a.url}: ${e.message}`);
+      }
+    }
   } finally {
     if (browser) await browser.close();
   }
+  if (graphic.length || Array.isArray(data.graphic)) data.graphic = graphic;
 
   /* ★ sites saved from Descubrir: the gallery's page and picture, no screenshot needed */
   let favs = 0;
@@ -196,7 +226,7 @@ async function main() {
   if (changedSomething && !DRY) {
     await writeFile(dataFile, after);
     // Screenshots of references taken out go too, unless another one uses them
-    const used = new Set(data.refs.flatMap(r => arr(r.shots)));
+    const used = new Set([...data.refs, ...graphic].flatMap(r => arr(r.shots)));
     for (const shot of goneShots) {
       const file = path.join(ROOT, shot);
       if (/^img\//.test(shot) && !used.has(shot) && existsSync(file)) await rm(file);

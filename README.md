@@ -36,6 +36,10 @@ Para verla en tu compu, abrí `index.html` con doble clic.
 
 Si el repo es público, cualquiera con el link puede verla.
 
+## Web design y Graphic design
+
+Arriba, al lado del nombre, elegís la mitad: **Web design** (Referencias, Descubrir, Mezclar, Gusto) o **Graphic design**: sitios de recursos por categoría (mockups, texturas, logos, tipografías, colores). En Graphic design, **+ Agregar** suma un sitio con su categoría (o una nueva) y **Sacar** lo saca; los dos se suben con **Subir**, como todo lo demás. Los recursos están en `data.js`, en la lista `graphic`.
+
 ## Carpetas
 
 Las referencias se ordenan en **carpetas, una por cliente** (cActus, U.Dent, Propia…). Arriba de los filtros tocás una carpeta para ver solo esas webs; **+ Carpeta** crea otra y **Editar** la renombra o la borra (las webs no se borran). En la ficha de cada referencia elegís en qué carpetas está. Al guardar con la ★ en Descubrir te pregunta en qué carpeta, y **+ Agregar** también.
