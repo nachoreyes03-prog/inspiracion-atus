@@ -220,14 +220,21 @@ export async function startBrowser() {
   const chromePath = findChrome();
   if (!chromePath) throw new Error('no encontré Chrome');
   const profile = await mkdtemp(path.join(tmpdir(), 'atus-'));
-  const chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--no-first-run',
-    '--no-default-browser-check', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
+  const chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio', '--no-first-run',
+    '--no-default-browser-check', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--window-size=1440,900', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let errText = '', exited = null;
+  chrome.stderr.on('data', d => { errText = (errText + d).slice(-800); });
+  chrome.on('exit', code => { exited = code; });
   let target = null;
-  for (let i = 0; i < 40 && !target; i++) {
+  for (let i = 0; i < 90 && !target && exited === null; i++) {
     await sleep(500);
     try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
   }
-  if (!target) { chrome.kill('SIGKILL'); throw new Error('Chrome no arrancó'); }
+  if (!target) {
+    chrome.kill('SIGKILL');
+    console.error(`Chrome (${chromePath}) no arrancó${exited !== null ? `, salió con ${exited}` : ''}:\n${errText}`);
+    throw new Error('Chrome no arrancó');
+  }
   const c = await connect(target.webSocketDebuggerUrl);
   await c.send('Page.enable');
   await c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
