@@ -11,8 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=20261030-4">
-<link rel="stylesheet" href="botones.css?v=20261030-4">
+<link rel="stylesheet" href="styles.css?v=20261030-5">
+<link rel="stylesheet" href="botones.css?v=20261030-5">
 </head>
 <body>
 
@@ -60,7 +60,10 @@
     </div>
     <div class="live-head" id="live-head" data-pour="contain">
       <p class="meta" id="live-meta"></p>
-      <button class="btn sm solid" type="button" id="live-shuffle" data-tip="Webs que no viste">Otra tanda</button>
+      <div class="live-actions">
+        <button class="btn sm" type="button" id="live-search" data-tip="El robot busca más en las galerías" hidden>Buscar más</button>
+        <button class="btn sm solid" type="button" id="live-shuffle" data-tip="Webs que no viste">Otra tanda</button>
+      </div>
     </div>
     <div class="saved-bar" id="saved-bar" hidden></div>
     <div class="filters" id="live-filters"></div>
@@ -155,8 +158,8 @@
 </dialog>
 
 <!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
-<script src="data.js?v=20261030-4"></script>
-<script src="botones.js?v=20261030-4"></script>
-<script src="app.js?v=20261030-4"></script>
+<script src="data.js?v=20261030-5"></script>
+<script src="botones.js?v=20261030-5"></script>
+<script src="app.js?v=20261030-5"></script>
 </body>
 </html>

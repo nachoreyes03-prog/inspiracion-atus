@@ -374,3 +374,4 @@ body.has-sync main { padding-bottom: 72px; }
   .top-in { gap: 0 12px; }
   .mode { padding: 7px 9px; font-size: 0.75rem; }
 }
+.live-actions { display: flex; gap: 8px; flex: none; }

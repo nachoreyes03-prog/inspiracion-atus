@@ -87,3 +87,53 @@ jobs:
           NUMBER: ${{ github.event.issue.number }}
           CHANGED: ${{ steps.robot.outputs.changed }}
           SAVED: ${{ steps.save.outcome }}
+
+  # "Buscar más" in Descubrir opens an issue titled "Buscar: law firm": search those words in the
+  # galleries now (scripts/fetch-live.mjs with SEARCH) and keep searching them in every sweep
+  buscar:
+    if: github.event_name == 'issues' && github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Buscar')
+    runs-on: ubuntu-latest
+    # Same group as live.yml: both write live.js
+    concurrency:
+      group: live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Buscar en las galerías
+        id: search
+        run: node scripts/fetch-live.mjs
+        env:
+          SEARCH: ${{ github.event.issue.body }}
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+      - name: Guardar
+        id: save
+        run: |
+          if git diff --quiet -- live.js && [ -z "$(git status --porcelain -- scripts/rubros-extra.txt)" ]; then
+            echo "Sin novedades"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add live.js scripts/rubros-extra.txt
+          git commit -m "En vivo: $SUMMARY"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+        env:
+          SUMMARY: ${{ steps.search.outputs.summary }}
+
+      - name: Responder y cerrar el issue
+        if: always()
+        run: |
+          if [ "${{ steps.save.outcome }}" != success ] || [ ! -s out/reply.md ]; then
+            mkdir -p out; echo "No pude buscar: el detalle está en la pestaña Actions." > out/reply.md
+          fi
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file out/reply.md
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}

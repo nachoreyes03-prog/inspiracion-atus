@@ -149,9 +149,13 @@
   const SYN_KEYS = Object.keys(SYN);
   const singular = w => (w.length > 4 && /s$/.test(w) ? w.replace(/(es|s)$/, '') : w);
 
+  // Words that don't say what kind of site it is: "web design lawyer" searches "lawyer"
+  const STOP = new Set(['web', 'webs', 'website', 'websites', 'site', 'sites', 'sitio', 'sitios', 'pagina', 'paginas', 'page', 'pages', 'landing',
+    'design', 'designs', 'diseno', 'disenos', 'inspiration', 'inspiracion', 'idea', 'ideas', 'ejemplo', 'ejemplos', 'example', 'examples',
+    'best', 'top', 'mejor', 'mejores', 'de', 'del', 'la', 'las', 'el', 'los', 'un', 'una', 'para', 'con', 'en', 'y', 'for', 'the', 'of', 'and', 'with', 'in']);
   // Each word becomes a group of terms: the word itself first, then its close relatives
   function parseQuery(q) {
-    return norm(q).split(/[\s,]+/).filter(t => t.length > 1).map(w => {
+    return norm(q).split(/[\s,]+/).filter(t => t.length > 1 && !STOP.has(t)).map(w => {
       const key = SYN[w] ? w : SYN[singular(w)] ? singular(w) : null;
       if (key) return { main: [w, SYN[key][0]], alts: SYN[key] };
       const row = SYN_KEYS.find(k => SYN[k].some(a => a === w || (w.length >= 5 && (a.startsWith(w) || w.startsWith(a)))));
@@ -160,10 +164,18 @@
   }
   // Fields are normalized text with a leading space so terms match at the start of a word
   const field = (...parts) => ' ' + norm(parts.flat().join(' '));
-  // A related word only counts in the name, categories or rubro tags; in the description it's too weak
+  // A related word only counts in the name, categories or rubro tags; in the description it's too weak.
+  // A site can miss some of the words ("law firm" also finds "Ario Law"), but those with all of them
+  // come first; with three or more words it has to have at least half.
   function matchScore(f, groups) {
-    let total = 0;
-    for (const g of groups) {
+    let total = 0, hit = 0;
+    for (const best of groupScores(f, groups)) if (best >= 3) { total += best; hit++; }
+    if (!hit || (groups.length > 2 && hit < Math.ceil(groups.length / 2))) return 0;
+    return hit === groups.length ? total * 1.5 : total;
+  }
+  // How well each word of the search matches (0 = not at all, 3+ = it counts)
+  function groupScores(f, groups) {
+    return groups.map(g => {
       let best = 0;
       const tryTerm = (t, w) => {
         const s = ' ' + t;
@@ -175,10 +187,8 @@
       };
       for (const t of g.main) tryTerm(t, 1);
       for (const t of g.alts) tryTerm(t, 0.6);
-      if (best < 3) return 0;
-      total += best;
-    }
-    return total;
+      return best;
+    });
   }
 
   ALL_REFS.forEach(r => {
@@ -1134,7 +1144,7 @@
   const FOR_YOU = [['portfolio', 3], ['architect', 3], ['interior', 3], ['typograph', 3], ['big type', 3], ['swiss', 3],
     ['studio', 2], ['minimal', 2], ['dark', 2], ['black', 2], ['monochrom', 2], ['editorial', 2], ['grid', 2], ['photograph', 2],
     ['agency', 2], ['brutal', 2], ['grain', 2], ['music', 2], ['retro', 2], ['interactive', 1], ['type', 1], ['museum', 1], ['gallery', 1], ['fashion', 1], ['creative', 1]];
-  const SOURCE_BOOST = { 'The FWA': 2, 'CSS Winner': 1.5, 'SiteInspire': 1.5, 'Minimal Gallery': 1.5, 'Typewolf': 1.5, 'One Page Love': 1, 'Mindsparkle': 1, 'Behance': 0.3 };
+  const SOURCE_BOOST = { 'The FWA': 2, 'Awwwards': 2, 'CSS Winner': 1.5, 'SiteInspire': 1.5, 'Minimal Gallery': 1.5, 'Typewolf': 1.5, 'One Page Love': 1, 'Mindsparkle': 1, 'Behance': 0.3 };
   const PAGE = 24;
 
   const L = {
@@ -1164,7 +1174,7 @@
     // The same site can come from two galleries: keep the first one by name. Skip articles that aren't sites.
     const names = new Set();
     allCache = D.items.filter(i => {
-      if (!i || !safeHref(i.link) || !i.title || /^(article|template review|interview)\b/i.test(i.title)) return false;
+      if (!i || !safeHref(i.link) || !i.title || /^(article|template review|interview|how to|market your)\b/i.test(i.title) || /squarespace/i.test(i.title)) return false;
       const key = norm(i.name || i.title).replace(/[^a-z0-9]/g, '');
       if (names.has(key)) return false;
       names.add(key);
@@ -1177,11 +1187,18 @@
     return allCache;
   }
   // Best first: how well it matches, then the gallery's curation, your taste and how recent it is
+  // A word that thousands of sites have ("studio", "agency") only adds points: a site has to match
+  // one of the specific words. "tattoo studio" finds tattoo studios, not every studio.
   function rankLive(list, groups) {
     const now = Date.now();
-    return list.map(i => {
-      const m = matchScore(i._f, groups);
-      if (!m) return null;
+    const scored = list.map(i => [i, groupScores(i._f, groups)]);
+    const common = groups.map((_, g) => scored.filter(([, s]) => s[g] >= 3).length > Math.max(60, list.length * 0.04));
+    const key = common.every(Boolean) ? groups.map(() => true) : common.map(c => !c);
+    return scored.map(([i, s]) => {
+      let total = 0, hit = 0, keyHit = 0;
+      s.forEach((best, g) => { if (best >= 3) { total += best; hit++; if (key[g]) keyHit++; } });
+      if (!keyHit || (groups.length > 2 && hit < Math.ceil(groups.length / 2))) return null;
+      const m = hit === groups.length ? total * 1.5 : total;
       const fresh = Math.max(0, 1 - (now - i._t) / (365 * 864e5));
       return [i, m + (SOURCE_BOOST[i.source] || 1) + i._score * 0.2 + fresh];
     }).filter(Boolean).sort((a, b) => b[1] - a[1]).map(([i]) => i);
@@ -1314,6 +1331,7 @@
     if (!L.rendered) return;
     const D = liveData(), all = liveAll(), grid = $('#live-grid'), more = $('#live-more');
     $('#live-shuffle').disabled = L.status !== 'ready' || !all.length;
+    $('#live-search').hidden = !$('#dq').value.trim() || !toEnglish($('#dq').value);
     if (L.status === 'idle' || L.status === 'loading') {
       put($('#live-meta'), 'Cargando…');
       put($('#live-filters'));
@@ -1347,7 +1365,9 @@
 
     if (!list.length) {
       more.hidden = true;
-      put(grid, notice(L.filter === 'saved' && !q ? 'Todavía no guardaste nada' : q ? `Nada con “${q}”` : 'Nada con esos filtros', q ? 'Probá en las galerías de arriba.' : null));
+      put(grid, h('div', { class: 'notice' },
+        h('h2', null, L.filter === 'saved' && !q ? 'Todavía no guardaste nada' : q ? `Nada con “${q}” todavía` : 'Nada con esos filtros'),
+        q ? h('button', { class: 'btn solid', type: 'button', onclick: () => searchMore(q) }, `Buscar “${toEnglish(q) || q}” en las galerías`) : null));
       return;
     }
     if (grid.querySelector('.notice')) put(grid);
@@ -1369,12 +1389,23 @@
     setTimeout(() => { autoPending = false; L.shown += PAGE; renderLive(); }, 60);
   }
 
+  // "Buscar más": asks the robot to search these words in the galleries now (One Page Love, Minimal
+  // Gallery, Awwwards) and in every sweep from then on. The words go in English, like the galleries.
+  function searchMore(q) {
+    const words = toEnglish(q) || q;
+    if (!words.trim()) return;
+    window.open(`https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: `Buscar: ${words}`, body: words, labels: 'buscar' }), '_blank', 'noopener');
+    toast('En GitHub tocá Create: en unos minutos aparecen más acá');
+  }
   function nextBatch() {
     const q = $('#dq').value.trim();
     if (L.filter === 'saved') L.filter = 'all';
     const list = liveList();
     // A search with few results: they're all on screen already
-    if (q && list.length <= L.visible.length) { toast(`Son todas las que hay con “${q}” (${fmtN(list.length)}). Buscá más en las galerías de arriba.`); return; }
+    if (q && list.length <= L.visible.length) {
+      toast(`Son todas las que hay con “${q}” (${fmtN(list.length)})`, { label: 'Buscar más', fn: () => searchMore(q) });
+      return;
+    }
     // Everything on screen counts as seen; unseen sites come first in the next batch.
     // A search keeps its words: the next batch is more of what you searched.
     for (const i of L.visible) L.seen.add(i.link);
@@ -1543,6 +1574,19 @@
       clearTimeout(dqT);
       dqT = setTimeout(renderLive, 150);
     });
+    // Enter searches right away and jumps to the results (on a phone it also closes the keyboard)
+    $('#dq').addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      clearTimeout(dqT);
+      store.set('dq', e.target.value);
+      L.shown = PAGE;
+      renderGalleries();
+      renderLive();
+      e.target.blur();
+      $('#live-head').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    $('#live-search').addEventListener('click', () => searchMore($('#dq').value.trim()));
     $('#live-shuffle').addEventListener('click', nextBatch);
     $('#live-more').addEventListener('click', () => { L.shown += PAGE; renderLive(); });
     window.addEventListener('scroll', autoMore, { passive: true });
