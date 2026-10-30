@@ -1,51 +1,15 @@
-// Adds a site to data.js from its link: opens it in headless Chrome, takes two screenshots,
-// reads the fonts and colors the page really uses and writes a reference at the top of the list.
-// Run by .github/workflows/agregar.yml when the "+ Agregar" button opens an issue.
-//
-// Env: ISSUE_BODY / ISSUE_TITLE (or URL) with the link · DRY_RUN=1 writes nothing in the repo
-// and leaves the screenshots and the entry in out/ · CHROME to point at a browser by hand.
-// Results go to $GITHUB_OUTPUT: status (added | exists | error), name, id, error.
+// Opens a site in headless Chrome, waits for intros to finish, takes two screenshots and reads the
+// fonts and colors the page really uses. robot.mjs turns that into a reference for data.js.
+// CHROME points at a browser by hand (on GitHub's runners it finds Google Chrome by itself).
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { hostOf, isSharedHost } from './data-file.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DRY = process.env.DRY_RUN === '1';
 const PORT = 9333;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-async function output(values) {
-  const lines = Object.entries(values).map(([k, v]) => `${k}=${String(v ?? '').replace(/\r?\n/g, ' ')}`).join('\n') + '\n';
-  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, lines);
-  process.stdout.write(lines);
-}
-
-// Same rule as the site (app.js siteKey): shared hosts are told apart by path, the rest by host
-const SHARED_HOSTS = /(^|\.)(behance\.net|dribbble\.com|instagram\.com|pinterest\.[a-z.]+|x\.com|twitter\.com|youtube\.com|vimeo\.com|medium\.com|github\.com|notion\.so|awwwards\.com|framer\.com|linkedin\.com)$/;
-const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
-const siteKey = u => {
-  const h = hostOf(u);
-  if (!SHARED_HOSTS.test(h)) return h;
-  try { return h + new URL(u).pathname.replace(/\/+$/, '').toLowerCase(); } catch { return h; }
-};
-
-function findUrl() {
-  const body = process.env.URL || process.env.ISSUE_BODY || '';
-  let u = (body.match(/https?:\/\/[^\s<>"'`]+/i) || [])[0];
-  // The issue title is "Agregar: site.com" when the body was edited away
-  if (!u) {
-    const t = (process.env.ISSUE_TITLE || '').replace(/^agregar:?\s*/i, '').trim();
-    if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(t)) u = 'https://' + t;
-  }
-  if (!u) return null;
-  u = u.replace(/[.,;:!?)\]]+$/, '');
-  try { const x = new URL(u); x.hash = ''; return x.href; } catch { return null; }
-}
-
-const parseData = src => JSON.parse(src.slice(src.indexOf('{', src.indexOf('window.ATUS_DATA')), src.lastIndexOf('}') + 1));
 
 /* ---------- Chrome over the DevTools protocol (Node 22 has WebSocket built in) ---------- */
 function findChrome() {
@@ -249,127 +213,92 @@ function pickPalette(a, shotBg) {
   return out.slice(0, 6).map(o => o.label ? `${o.h} ${o.label}` : o.h);
 }
 
-function formatEntry(e) {
-  return '    {\n' + Object.entries(e).map(([k, v]) => `      ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',\n') + '\n    }';
-}
 
-/* ---------- main ---------- */
-async function main() {
-  const url = findUrl();
-  if (!url) { await output({ status: 'error', error: 'no encontré un link en el issue' }); return; }
-
-  const dataFile = path.join(ROOT, 'data.js');
-  let src = await readFile(dataFile, 'utf8');
-  const data = parseData(src);
-  const key = siteKey(url);
-  const same = data.refs.find(r => r.url && siteKey(r.url) === key);
-  if (same) { await output({ status: 'exists', name: same.name, id: same.id }); return; }
-
+/* ---------- the browser, and one site ---------- */
+// Starts Chrome once for every site of a run; call close() at the end
+export async function startBrowser() {
   const chromePath = findChrome();
   if (!chromePath) throw new Error('no encontré Chrome');
   const profile = await mkdtemp(path.join(tmpdir(), 'atus-'));
   const chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--no-first-run',
     '--no-default-browser-check', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
-  let c = null;
-  try {
-    let target = null;
-    for (let i = 0; i < 40 && !target; i++) {
-      await sleep(500);
-      try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
-    }
-    if (!target) throw new Error('Chrome no arrancó');
-    c = await connect(target.webSocketDebuggerUrl);
-    await c.send('Page.enable');
-    await c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    const loaded = c.wait('Page.loadEventFired', 30000);
-    const nav = await c.send('Page.navigate', { url });
-    if (nav.errorText) throw new Error(`no pude abrir la página (${nav.errorText})`);
-    await loaded;
-    await sleep(4000);
-    await c.send('Runtime.evaluate', { expression: `document.documentElement.appendChild(Object.assign(document.createElement('style'), { textContent: ${JSON.stringify(HIDE_BANNERS)} }))` });
-    // Intros and loaders run in real time and slower here, without a GPU (Lusion's took ~9 s):
-    // give them 10 s, then wait until two screenshots in a row weigh about the same
-    await sleep(6000);
-    const snap = async () => Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })).data, 'base64').length;
-    let prev = await snap();
-    for (let i = 0; i < 8; i++) {
-      await sleep(2500);
-      const cur = await snap();
-      const ratio = cur / prev;
-      prev = cur;
-      if (ratio > 0.85 && ratio < 1.15) break;
-    }
-
-    const res = await c.send('Runtime.evaluate', { expression: `(${analyze})()`, returnByValue: true });
-    if (res.exceptionDetails) throw new Error('no pude leer la página');
-    const a = res.result.value;
-
-    const shot1 = Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 80 })).data, 'base64');
-    // The wheel scrolls pages with their own scroller (Lenis, a scrolling div) too
-    await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 720, y: 450, deltaX: 0, deltaY: 900 });
-    await sleep(2500);
-    const shot2 = Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 80 })).data, 'base64');
-
-    const name = pickName(a, url);
-    let id = hostOf(url).split('.').filter(p => p !== 'www')[0].replace(/[^a-z0-9-]/g, '') || 'web';
-    if (SHARED_HOSTS.test(hostOf(url))) id += '-' + (new URL(url).pathname.split('/').filter(Boolean).pop() || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
-    id = id.replace(/-+$/, '');
-    const ids = new Set(data.refs.map(r => r.id));
-    for (let i = 2; ids.has(id); i++) id = id.replace(/-\d+$/, '') + '-' + i;
-
-    const bgRes = await c.send('Runtime.evaluate', { expression: `(${dominantColor})(${JSON.stringify('data:image/jpeg;base64,' + shot1.toString('base64'))})`, awaitPromise: true, returnByValue: true }).catch(() => null);
-    const shotBg = bgRes && bgRes.result && bgRes.result.value;
-    a.shotBg = shotBg;
-
-    const fonts = pickFonts(a);
-    const palette = pickPalette(a, shotBg);
-    const fondo = fondoOf(a, shotBg);
-    const tags = fondo ? [lum(fondo) < 0.35 ? 'oscuro' : 'claro'] : [];
-    const stack = a.stack.join(' · ');
-    const shots = [`img/${id}.jpg`];
-    const twoShots = !shot1.equals(shot2);
-    if (twoShots) shots.push(`img/${id}-2.jpg`);
-
-    const prompt = [
-      `Diseñá una web con la dirección visual de ${name} (${url}).`,
-      fonts.length ? `Tipografía: ${fonts.join('; ')}.` : '',
-      palette.length ? `Paleta: ${palette.join(', ')}.` : '',
-      stack ? `Hecha con: ${stack}.` : '',
-      'Mirá las capturas y la web: tomá de ahí la grilla, la escala de los titulares, el uso de la imagen y el ritmo entre secciones.',
-      'Adaptalo a: [tu proyecto].',
-    ].filter(Boolean).join('\n');
-
-    // "auto": filled in by the robot; Claude can complete layout, motion, dna and rubro later
-    const entry = { id, name, url, rubro: '', atus: false, tags, likes: '', avoid: '', shots, fonts, palette, layout: '', motion: '', stack, dna: '', prompt, auto: true };
-
-    const outDir = DRY ? path.join(ROOT, 'out') : path.join(ROOT, 'img');
-    await mkdir(outDir, { recursive: true });
-    await writeFile(path.join(outDir, `${id}.jpg`), shot1);
-    if (twoShots) await writeFile(path.join(outDir, `${id}-2.jpg`), shot2);
-
-    if (DRY) {
-      await writeFile(path.join(outDir, 'entry.json'), JSON.stringify({ entry, analysis: a }, null, 2));
-      console.log(formatEntry(entry));
-    } else {
-      const today = new Date().toISOString().slice(0, 10);
-      src = src.replace(/("refs":\s*\[[ \t]*\r?\n)/, `$1${formatEntry(entry)},\n`).replace(/"updated":\s*"[^"]*"/, `"updated": "${today}"`);
-      parseData(src); // throws before writing if the file would break
-      await writeFile(dataFile, src);
-      // A new ?v= on data.js so phones don't keep the cached list
-      const indexFile = path.join(ROOT, 'index.html');
-      const index = await readFile(indexFile, 'utf8');
-      await writeFile(indexFile, index.replace(/data\.js\?v=[^"]*/, `data.js?v=${today.replace(/-/g, '')}-a${Date.now() % 100000}`));
-    }
-    await output({ status: 'added', name, id });
-  } finally {
-    if (c) c.close();
-    chrome.kill('SIGKILL');
-    await sleep(300);
-    await rm(profile, { recursive: true, force: true }).catch(() => {});
+  let target = null;
+  for (let i = 0; i < 40 && !target; i++) {
+    await sleep(500);
+    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page'); } catch { /* not up yet */ }
   }
+  if (!target) { chrome.kill('SIGKILL'); throw new Error('Chrome no arrancó'); }
+  const c = await connect(target.webSocketDebuggerUrl);
+  await c.send('Page.enable');
+  await c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  return {
+    c,
+    async close() {
+      c.close();
+      chrome.kill('SIGKILL');
+      await sleep(300);
+      await rm(profile, { recursive: true, force: true }).catch(() => {});
+    },
+  };
 }
 
-const guard = setTimeout(() => { console.error('El robot tardó demasiado'); process.exit(1); }, 150000);
-main()
-  .catch(async e => { console.error(e); await output({ status: 'error', error: e.message }); })
-  .finally(() => clearTimeout(guard));
+// An id from the host ("estoesronda.com" → "estoesronda"), plus the path on shared hosts
+export function idFor(url, taken) {
+  let id = hostOf(url).split('.').filter(p => p !== 'www')[0].replace(/[^a-z0-9-]/g, '') || 'web';
+  if (isSharedHost(url)) id += '-' + (new URL(url).pathname.split('/').filter(Boolean).pop() || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
+  id = id.replace(/-+$/, '');
+  for (let i = 2; taken.has(id); i++) id = id.replace(/-\d+$/, '') + '-' + i;
+  return id;
+}
+
+// Returns the reference (without id and folders), the screenshots and the raw analysis
+export async function captureSite({ c }, url) {
+  const loaded = c.wait('Page.loadEventFired', 30000);
+  const nav = await c.send('Page.navigate', { url });
+  if (nav.errorText) throw new Error(`no pude abrir la página (${nav.errorText})`);
+  await loaded;
+  await sleep(4000);
+  await c.send('Runtime.evaluate', { expression: `document.documentElement.appendChild(Object.assign(document.createElement('style'), { textContent: ${JSON.stringify(HIDE_BANNERS)} }))` });
+  // Intros and loaders run in real time and slower here, without a GPU (Lusion's took ~9 s):
+  // give them 10 s, then wait until two screenshots in a row weigh about the same
+  await sleep(6000);
+  const snap = async () => Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })).data, 'base64').length;
+  let prev = await snap();
+  for (let i = 0; i < 8; i++) {
+    await sleep(2500);
+    const cur = await snap();
+    const ratio = cur / prev;
+    prev = cur;
+    if (ratio > 0.85 && ratio < 1.15) break;
+  }
+
+  const res = await c.send('Runtime.evaluate', { expression: `(${analyze})()`, returnByValue: true });
+  if (res.exceptionDetails) throw new Error('no pude leer la página');
+  const a = res.result.value;
+
+  const shot1 = Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 80 })).data, 'base64');
+  // The wheel scrolls pages with their own scroller (Lenis, a scrolling div) too
+  await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 720, y: 450, deltaX: 0, deltaY: 900 });
+  await sleep(2500);
+  const shot2 = Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 80 })).data, 'base64');
+
+  const bgRes = await c.send('Runtime.evaluate', { expression: `(${dominantColor})(${JSON.stringify('data:image/jpeg;base64,' + shot1.toString('base64'))})`, awaitPromise: true, returnByValue: true }).catch(() => null);
+  const shotBg = bgRes && bgRes.result && bgRes.result.value;
+  a.shotBg = shotBg;
+
+  const name = pickName(a, url);
+  const fonts = pickFonts(a);
+  const palette = pickPalette(a, shotBg);
+  const fondo = fondoOf(a, shotBg);
+  const tags = fondo ? [lum(fondo) < 0.35 ? 'oscuro' : 'claro'] : [];
+  const stack = a.stack.join(' · ');
+  const prompt = [
+    `Diseñá una web con la dirección visual de ${name} (${url}).`,
+    fonts.length ? `Tipografía: ${fonts.join('; ')}.` : '',
+    palette.length ? `Paleta: ${palette.join(', ')}.` : '',
+    stack ? `Hecha con: ${stack}.` : '',
+    'Mirá las capturas y la web: tomá de ahí la grilla, la escala de los titulares, el uso de la imagen y el ritmo entre secciones.',
+    'Adaptalo a: [tu proyecto].',
+  ].filter(Boolean).join('\n');
+  return { name, tags, fonts, palette, stack, prompt, shot1, shot2: shot1.equals(shot2) ? null : shot2, analysis: a };
+}

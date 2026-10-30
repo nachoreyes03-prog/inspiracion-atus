@@ -1,18 +1,22 @@
-name: Agregar o sacar referencias
+name: Cambios en Referencias
 
-# The "+ Agregar" button opens a GitHub issue titled "Agregar: site.com" with the link in the body:
-# the add job saves that site in data.js (screenshots, fonts, colors) and answers the issue.
-# The "Sacar" button opens one titled "Sacar: Name" with "id: <id>": the remove job deletes it.
+# The site's "Subir" button (and "+ Agregar" and "Sacar") opens a GitHub issue titled "Cambios…"
+# whose body ends with a ```json block: pages to add, references to take out, ★ sites, folders.
+# scripts/robot.mjs applies it to data.js, and this answers and closes the issue.
+# Older issues titled "Agregar: site.com" or "Sacar: Name" still work.
 on:
   issues:
     types: [opened]
-  workflow_dispatch: # to run it by hand from the Actions tab
+  workflow_dispatch: # to add a page by hand from the Actions tab, or to try a json of changes
     inputs:
       url:
         description: "Link de la web"
-        required: true
+        default: ""
+      cambios:
+        description: "O un json de cambios, como el del issue (para probar)"
+        default: ""
       prueba:
-        description: "Poné 1 para probar sin guardar nada (las capturas quedan como artifact)"
+        description: "Poné 1 para probar sin guardar nada (lo que sale queda como artifact)"
         default: "0"
 
 permissions:
@@ -24,9 +28,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  add:
+  robot:
     # Only the repo owner's issues: anyone can open an issue on a public repo
-    if: github.event_name == 'workflow_dispatch' || (github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Agregar'))
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.user.login == github.repository_owner &&
+       (startsWith(github.event.issue.title, 'Cambios') || startsWith(github.event.issue.title, 'Agregar') || startsWith(github.event.issue.title, 'Sacar')))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,26 +42,28 @@ jobs:
         with:
           node-version: 22
 
-      - name: Sacar capturas, tipografías y colores
-        id: add
-        run: node scripts/add-ref.mjs
+      - name: Aplicar los cambios
+        id: robot
+        run: node scripts/robot.mjs
         env:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           URL: ${{ inputs.url }}
+          CHANGES: ${{ inputs.cambios }}
           DRY_RUN: ${{ inputs.prueba == '1' && '1' || '0' }}
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       - name: Guardar
         id: save
-        if: steps.add.outputs.status == 'added' && inputs.prueba != '1'
+        if: steps.robot.outputs.changed == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add data.js index.html img
-          git commit -m "Referencia nueva: $NAME"
+          git add -A data.js index.html img
+          git commit -m "Referencias: $SUMMARY"
           for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
         env:
-          NAME: ${{ steps.add.outputs.name }}
+          SUMMARY: ${{ steps.robot.outputs.summary }}
 
       - name: Subir lo de la prueba
         if: inputs.prueba == '1'
@@ -66,65 +75,15 @@ jobs:
       - name: Responder y cerrar el issue
         if: always() && github.event_name == 'issues'
         run: |
-          case "$STATUS" in
-            added)  [ "$SAVED" = success ] || { gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "No pude guardarla en el repo. El detalle está en la pestaña Actions."; exit 1; }
-                    MSG="Listo: **$NAME** ya está en Referencias, con capturas, tipografías y colores. Aparece en uno o dos minutos: $SITE#ref-$ID" ;;
-            exists) MSG="**$NAME** ya estaba en Referencias: $SITE#ref-$ID" ;;
-            *)      MSG="No pude sumarla: ${ERROR:-el robot falló}. El detalle está en la pestaña Actions." ;;
-          esac
-          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "$MSG"
+          if [ "$CHANGED" = 1 ] && [ "$SAVED" != success ]; then
+            gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "No pude guardar los cambios en el repo. El detalle está en la pestaña Actions."
+            exit 1
+          fi
+          [ -s out/reply.md ] || { mkdir -p out; echo "El robot falló. El detalle está en la pestaña Actions." > out/reply.md; }
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body-file out/reply.md
+          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
-          STATUS: ${{ steps.add.outputs.status }}
-          NAME: ${{ steps.add.outputs.name }}
-          ID: ${{ steps.add.outputs.id }}
-          ERROR: ${{ steps.add.outputs.error }}
-          SAVED: ${{ steps.save.outcome }}
-          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-
-  remove:
-    if: github.event_name == 'issues' && github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, 'Sacar')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Sacarla de data.js
-        id: remove
-        run: node scripts/remove-ref.mjs
-        env:
-          ISSUE_BODY: ${{ github.event.issue.body }}
-
-      - name: Guardar
-        id: save
-        if: steps.remove.outputs.status == 'removed'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add -A data.js index.html img
-          git commit -m "Referencia sacada: $NAME"
-          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
-        env:
-          NAME: ${{ steps.remove.outputs.name }}
-
-      - name: Responder y cerrar el issue
-        if: always()
-        run: |
-          case "$STATUS" in
-            removed) [ "$SAVED" = success ] || { gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "No pude guardar el cambio en el repo. El detalle está en la pestaña Actions."; exit 1; }
-                     MSG="Listo: saqué **$NAME** de Referencias. En uno o dos minutos desaparece de todos tus dispositivos." ;;
-            missing) MSG="**$NAME** ya no estaba en Referencias." ;;
-            *)       MSG="No pude sacarla: ${ERROR:-el robot falló}. El detalle está en la pestaña Actions." ;;
-          esac
-          gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" --comment "$MSG"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NUMBER: ${{ github.event.issue.number }}
-          STATUS: ${{ steps.remove.outputs.status }}
-          NAME: ${{ steps.remove.outputs.name }}
-          ERROR: ${{ steps.remove.outputs.error }}
+          CHANGED: ${{ steps.robot.outputs.changed }}
           SAVED: ${{ steps.save.outcome }}

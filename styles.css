@@ -265,6 +265,34 @@ img { max-width: 100%; }
 .confirm[open] { animation: fade .18s var(--ease); }
 .confirm p { margin: 0 0 20px; font-size: 1.0625rem; line-height: 1.4; text-wrap: pretty; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Folders, one per client: above the filters, bigger than a chip */
+.folders { display: flex; gap: 8px; align-items: center; }
+.folder { appearance: none; display: inline-flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: 500 0.9375rem/1 var(--font); padding: 11px 16px; cursor: pointer; white-space: nowrap; transition: border-color .15s var(--ease), background-color .15s var(--ease), color .15s var(--ease); }
+.folder:hover { border-color: var(--ink); }
+.folder[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.folder .c { font: 400 0.6875rem/1 var(--mono); opacity: .7; font-variant-numeric: tabular-nums; }
+.folder.new { border-style: dashed; background: transparent; color: var(--ink-2); }
+.folder.new:hover { color: var(--ink); }
+.folder.edit { border-color: transparent; background: transparent; color: var(--ink-2); padding-inline: 10px; font-size: 0.8125rem; }
+.folder.edit:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+/* A reference's folders, in its detail */
+.d-folders { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 4px; }
+.d-folders .lbl { font: 0.75rem var(--mono); color: var(--ink-2); margin-right: 4px; }
+/* Choosing folders: ★ in Descubrir, "+ Agregar" */
+.confirm .pick-folders { margin-top: 14px; }
+.confirm .pick-folders:empty { display: none; }
+#pick-title { margin: 0; }
+.pick-new { display: flex; gap: 8px; margin-top: 12px; }
+.pick-new .in { flex: 1; min-width: 0; }
+#pick .confirm-actions, #folder-dlg .confirm-actions { margin-top: 20px; }
+.confirm-actions .grow { flex: 1; }
+.btn.danger-text { color: var(--danger); }
+.btn.danger-text:hover { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+/* Changes that are only on this device until "Subir" */
+.sync { position: fixed; left: 16px; bottom: 16px; z-index: var(--z-toast); display: flex; align-items: center; gap: 14px; max-width: calc(100% - 32px); padding: 6px 6px 6px 18px; border-radius: 999px; background: var(--ink); color: var(--bg); font: 500 0.8125rem/1.3 var(--font); }
+.sync[hidden] { display: none; }
+body.has-sync .toast { bottom: 80px; }
+body.has-sync main { padding-bottom: 72px; }
 /* "+ Agregar": paste a link */
 .confirm .add-note { margin: 12px 0 20px; font-size: 0.875rem; color: var(--ink-2); }
 .confirm .add-note b { color: var(--ink); font-weight: 600; }

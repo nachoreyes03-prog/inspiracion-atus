@@ -2,6 +2,20 @@
 // Las referencias se muestran en el orden de esta lista: la primera es la más nueva.
 window.ATUS_DATA = {
   "updated": "2026-10-23",
+  "folders": [
+    {
+      "id": "cactus",
+      "name": "cActus"
+    },
+    {
+      "id": "udent",
+      "name": "U.Dent"
+    },
+    {
+      "id": "propia",
+      "name": "Propia"
+    }
+  ],
   "refs": [
     {
       "id": "ronda",
@@ -152,6 +166,7 @@ window.ATUS_DATA = {
       "name": "Varsity",
       "url": "https://www.varsity.vc/",
       "rubro": "Inversión",
+      "folders": ["udent"],
       "atus": false,
       "tags": ["claro","serif","grilla","foto","mayúsculas"],
       "likes": "",
@@ -170,6 +185,7 @@ window.ATUS_DATA = {
       "name": "Ledup",
       "url": "https://ledup.pt/",
       "rubro": "Producto",
+      "folders": ["udent"],
       "atus": false,
       "tags": ["claro","redondeado","bento","tierra","producto"],
       "likes": "",
@@ -188,6 +204,7 @@ window.ATUS_DATA = {
       "name": "Juan Mora Romero",
       "url": "https://www.juanmoraromero.com/",
       "rubro": "Portfolio",
+      "folders": ["propia"],
       "atus": true,
       "tags": ["oscuro","grotesk","grilla","grano","portfolio"],
       "likes": "Buena para Atus.",
@@ -242,6 +259,7 @@ window.ATUS_DATA = {
       "name": "Julia Marro",
       "url": "https://juliamarro.com/",
       "rubro": "Música",
+      "folders": ["udent","cactus"],
       "atus": false,
       "tags": ["oscuro","foto","grano","verde","mayúsculas"],
       "likes": "",
@@ -260,6 +278,7 @@ window.ATUS_DATA = {
       "name": "Cactus Estudio",
       "url": "https://cactusestudio.com/",
       "rubro": "Estudio creativo",
+      "folders": ["udent","cactus"],
       "atus": false,
       "tags": ["oscuro","grano","lima","humor","tuyo"],
       "likes": "",

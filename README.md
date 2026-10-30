@@ -13,7 +13,7 @@ Archivo de webs de referencia: capturas, tipografías, paletas, layout y un prom
 | `img/` | Capturas de cada referencia |
 | `live.js` | Webs nuevas de las galerías (lo escribe el robot, no se edita a mano) |
 | `scripts/fetch-live.mjs` | El robot: lee los feeds de Minimal Gallery, One Page Love, SiteInspire, Lapa Ninja, CSS Winner, Behance, The FWA, Typewolf y Mindsparkle |
-| `scripts/add-ref.mjs` + `.github/workflows/agregar.yml` | El robot del botón **+ Agregar**: suma a `data.js` la web del issue que abrís |
+| `scripts/robot.mjs` + `.github/workflows/agregar.yml` | El robot de **Subir**: aplica a `data.js` lo que cambiaste (webs nuevas, sacadas, ★, carpetas). Usa `scripts/capture.mjs` (capturas, tipografías y colores) y `scripts/data-file.mjs` (lee y escribe `data.js`) |
 | `.github/workflows/live.yml` | Corre el robot cada 6 horas; además busca en One Page Love unos 95 rubros (dentist, restaurant, hotel…) |
 
 ## Descubrir
@@ -36,9 +36,17 @@ Para verla en tu compu, abrí `index.html` con doble clic.
 
 Si el repo es público, cualquiera con el link puede verla.
 
+## Carpetas
+
+Las referencias se ordenan en **carpetas, una por cliente** (cActus, U.Dent, Propia…). Arriba de los filtros tocás una carpeta para ver solo esas webs; **+ Carpeta** crea otra y **Editar** la renombra o la borra (las webs no se borran). En la ficha de cada referencia elegís en qué carpetas está. Al guardar con la ★ en Descubrir te pregunta en qué carpeta, y **+ Agregar** también.
+
+## Cómo se guarda todo en todos lados
+
+Lo que hacés (agregar, sacar, guardar con ★, carpetas) se ve al instante en ese dispositivo. Abajo aparece **"N cambios solo en este dispositivo · Subir"**: tocás **Subir**, se abre GitHub con un issue ya escrito y tocás **Create**. Un robot (`.github/workflows/agregar.yml` + `scripts/robot.mjs`) aplica todo a `data.js` y te responde en el issue; en uno o dos minutos está en todos tus dispositivos y Claude lo ve. **+ Agregar** y **Sacar** abren ese issue solos. Solo procesa issues tuyos.
+
 ## Agregar una referencia
 
-**Con el botón (lo más rápido):** en Referencias tocá **+ Agregar** y pegá el link (en la compu también podés pegarlo directo con Ctrl+V). La web aparece al instante en ese dispositivo y se abre GitHub con un issue ya escrito: tocá **Create**. Un robot (`.github/workflows/agregar.yml` + `scripts/add-ref.mjs`) la abre en Chrome, le saca dos capturas, lee las tipografías y los colores que usa, la suma al principio de `data.js` con `"auto": true` y te responde en el issue. En uno o dos minutos está en todos tus dispositivos. Solo procesa issues tuyos cuyo título empieza con "Agregar". Para probarlo sin guardar nada: **Actions → Agregar referencia → Run workflow** con *prueba* en 1.
+**Con el botón (lo más rápido):** en Referencias tocá **+ Agregar** y pegá el link (en la compu también podés pegarlo directo con Ctrl+V). Para las webs nuevas el robot (con `scripts/capture.mjs`) las abre en Chrome, les saca dos capturas, lee las tipografías y los colores que usan y las suma al principio de `data.js` con `"auto": true`. Para probarlo sin guardar nada: **Actions → Cambios en Referencias → Run workflow** con el link y *prueba* en 1.
 
 Las fichas automáticas no tienen layout, movimiento ni "por qué funciona": pedile a Claude que las complete.
 

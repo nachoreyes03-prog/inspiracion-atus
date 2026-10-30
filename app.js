@@ -47,6 +47,7 @@
   const swatchLabel = s => String(s || '').replace(/#([0-9a-f]{6}|[0-9a-f]{3})\b/i, '').replace(/^[\s—–:-]+/, '').trim();
   const fontName = s => String(s || '').split(/\s+[—–]\s+|\s+-\s+/)[0].trim();
   const arr = v => Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()) : (typeof v === 'string' && v.trim() ? [v] : []);
+  const arr2 = v => (Array.isArray(v) ? v : []);
   const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const isTyping = el => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
   const dayOf = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + String(d.getFullYear()).slice(2); };
@@ -76,6 +77,41 @@
   store.set('removed', [...HIDDEN]);
   const REFS = ALL_REFS.filter(r => !HIDDEN.has(r.id));
   const syncRefs = () => REFS.splice(0, REFS.length, ...ALL_REFS.filter(r => !HIDDEN.has(r.id)));
+  // ★ sites the robot saved from Descubrir: the gallery's picture and page, no DNA of their own
+  for (const r of ALL_REFS) if (r.gallery) r.mixText = { type: `la tipografía de ${r.name}`, color: `los colores de ${r.name}`, layout: `el layout de ${r.name}`, motion: `el movimiento de ${r.name}`, tone: r.desc || `la actitud de ${r.name}` };
+
+  // Folders, one per client. They live in data.js; what changed on this device and isn't uploaded
+  // yet waits in PEND, and each pending change drops out once data.js shows it.
+  const DATA_FOLDERS = (DATA && Array.isArray(DATA.folders) ? DATA.folders : []).filter(f => f && f.id && f.name);
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  const PEND = (() => {
+    const p = Object.assign({ folderAdds: [], folderRenames: {}, folderRemoves: [], refs: {} }, store.get('pending', {}));
+    const inData = id => DATA_FOLDERS.find(f => f.id === id);
+    p.folderAdds = (Array.isArray(p.folderAdds) ? p.folderAdds : []).filter(f => f && f.id && f.name && !inData(f.id));
+    for (const [id, name] of Object.entries(p.folderRenames || {})) if (!inData(id) || inData(id).name === name) delete p.folderRenames[id];
+    p.folderRemoves = arr(p.folderRemoves).filter(id => inData(id));
+    for (const [id, list] of Object.entries(p.refs || {})) {
+      const r = ALL_REFS.find(x => x.id === id);
+      if (!r || sameSet(arr(list), arr(r.folders))) delete p.refs[id];
+    }
+    return p;
+  })();
+  const savePend = () => store.set('pending', PEND);
+  store.set('pending', PEND);
+  function folderList() {
+    const gone = new Set(PEND.folderRemoves);
+    return [...DATA_FOLDERS, ...PEND.folderAdds].filter(f => !gone.has(f.id)).map(f => ({ id: f.id, name: PEND.folderRenames[f.id] || f.name }));
+  }
+  const folderName = id => (folderList().find(f => f.id === id) || {}).name || id;
+  const findFolderByName = name => (folderList().find(f => norm(f.name) === norm(name)) || {}).id || null;
+  function createFolder(name) {
+    const ids = new Set([...DATA_FOLDERS, ...PEND.folderAdds].map(f => f.id));
+    let id = slug(name) || 'carpeta';
+    for (let i = 2; ids.has(id); i++) id = id.replace(/-\d+$/, '') + '-' + i;
+    PEND.folderAdds.push({ id, name });
+    savePend();
+    return id;
+  }
   const TASTE = DATA && DATA.taste ? DATA.taste : null;
 
   /* ---------- search: a rubro in Spanish or English, ranked ---------- */
@@ -147,15 +183,15 @@
 
   ALL_REFS.forEach(r => {
     r._f = {
-      q: '', name: field(r.name, r.rubro), cats: field(arr(r.tags), r.rubro),
+      q: '', name: field(r.name, r.rubro), cats: field(arr(r.tags), arr(r.cats), r.rubro),
       // Palette entries carry color names like "claro"; only the hex goes into search so they don't pass as a mood
-      desc: field(r.likes, r.dna, r.layout, r.avoid), extra: field(arr(r.fonts), arr(r.palette).map(hexOf).filter(Boolean), r.motion, r.stack, r.url, r.atus ? 'atus' : ''),
+      desc: field(r.likes, r.dna, r.layout, r.avoid, r.desc), extra: field(arr(r.fonts), arr(r.palette).map(hexOf).filter(Boolean), r.motion, r.stack, r.url, r.atus ? 'atus' : ''),
     };
   });
 
   /* ---------- state ---------- */
   const S = {
-    tab: 'refs', q: '', rubro: null, tag: null, atusOnly: false, favOnly: false,
+    tab: 'refs', q: '', rubro: null, tag: null, favOnly: false, folder: store.get('folder', null),
     mix: new Set(store.get('mix', [])),
     aspects: store.get('aspects', {}),
     custom: store.get('mixCustom', {}),
@@ -269,7 +305,79 @@
   let ADDED = store.get('added', []).filter(a => a && safeHref(a.url) && !refKeys.has(siteKey(a.url)));
   store.set('added', ADDED);
   const nameOfHost = hst => { const w = hst.split('.')[0] || hst; return w.charAt(0).toUpperCase() + w.slice(1); };
-  const issueUrl = url => `https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: 'Agregar: ' + host(url), body: url, labels: 'agregar' });
+
+  /* ---------- uploading: everything that changed on this device, in one GitHub issue ---------- */
+  // The robot (scripts/robot.mjs) applies the issue's json block to data.js, so the changes reach
+  // every device and Claude. Applying the same block twice changes nothing.
+  function pendingChanges() {
+    const ch = {};
+    const inRefs = link => ALL_REFS.some(r => r.url === link);
+    const adds = ADDED.map(a => ({ url: a.url, folders: arr(a.folders) }));
+    if (adds.length) ch.adds = adds;
+    if (HIDDEN.size) ch.removes = [...HIDDEN];
+    const favs = L.saved.filter(s => !inRefs(s.link)).map(s => ({
+      link: s.link, name: s.name || s.title, source: s.source || '', image: s.image || '', cats: arr(s.cats).slice(0, 5),
+      desc: String(s.desc || s.tagline || '').slice(0, 200), folders: arr(s.folders),
+    }));
+    if (favs.length) ch.favs = favs;
+    const fo = {};
+    if (PEND.folderAdds.length) fo.add = PEND.folderAdds.map(f => ({ id: f.id, name: f.name }));
+    const ren = Object.entries(PEND.folderRenames).map(([id, name]) => ({ id, name }));
+    if (ren.length) fo.rename = ren;
+    if (PEND.folderRemoves.length) fo.remove = [...PEND.folderRemoves];
+    if (Object.keys(fo).length) ch.folders = fo;
+    if (Object.keys(PEND.refs).length) ch.refs = Object.assign({}, PEND.refs);
+    return ch;
+  }
+  const countChanges = ch => arr2(ch.adds).length + arr2(ch.removes).length + arr2(ch.favs).length + Object.keys(ch.refs || {}).length
+    + (ch.folders ? arr2(ch.folders.add).length + arr2(ch.folders.rename).length + arr2(ch.folders.remove).length : 0);
+  function changeLines(ch) {
+    const fn = ids => (ids.length ? ` → ${ids.map(folderName).join(', ')}` : '');
+    const refName = id => (ALL_REFS.find(r => r.id === id) || {}).name || id;
+    return [
+      ...arr2(ch.adds).map(a => `- Agregar ${a.url}${fn(a.folders)}`),
+      ...arr2(ch.removes).map(id => `- Sacar ${refName(id)}`),
+      ...arr2(ch.favs).map(f => `- Guardar de Descubrir: ${f.name}${fn(f.folders)}`),
+      ...(ch.folders ? [
+        ...arr2(ch.folders.add).map(f => `- Carpeta nueva: ${f.name}`),
+        ...arr2(ch.folders.rename).map(f => `- Renombrar carpeta: ${f.name}`),
+        ...arr2(ch.folders.remove).map(id => `- Borrar carpeta: ${(DATA_FOLDERS.find(f => f.id === id) || {}).name || id}`),
+      ] : []),
+      ...Object.entries(ch.refs || {}).map(([id, list]) => `- ${refName(id)}${fn(list) || ' → sin carpeta'}`),
+    ];
+  }
+  // GitHub refuses very long links: big batches go without descriptions, then in parts
+  function issueLink(ch) {
+    const n = countChanges(ch);
+    const make = (c, lines) => `https://github.com/${REPO}/issues/new?` + new URLSearchParams({
+      title: `Cambios en Referencias (${countChanges(c)})`, labels: 'cambios',
+      body: 'Cambios desde Inspiración Atus. Tocá Create y el robot los aplica.\n\n' + (lines ? changeLines(c).join('\n') + '\n\n' : '') + '```json\n' + JSON.stringify(c) + '\n```',
+    });
+    let c = ch, link = make(c, true);
+    if (link.length > 7000) link = make(c, false);
+    if (link.length > 7000 && c.favs) { c = Object.assign({}, c, { favs: c.favs.map(f => Object.assign({}, f, { desc: '' })) }); link = make(c, false); }
+    while (link.length > 7000 && c.favs && c.favs.length > 1) { c = Object.assign({}, c, { favs: c.favs.slice(0, Math.ceil(c.favs.length / 2)) }); link = make(c, false); }
+    return { link, partial: countChanges(c) < n };
+  }
+  function upload() {
+    const ch = pendingChanges();
+    if (!countChanges(ch)) return;
+    const { link, partial } = issueLink(ch);
+    window.open(link, '_blank', 'noopener');
+    store.set('sent', { sig: JSON.stringify(ch), at: Date.now() });
+    renderSync();
+    if (partial) toast('Eran muchas: subí una parte. Cuando el robot termine, tocá Subir otra vez.');
+  }
+  function renderSync() {
+    const ch = pendingChanges(), n = countChanges(ch);
+    $('#sync').hidden = !n;
+    document.body.classList.toggle('has-sync', !!n);
+    if (!n) return;
+    const sent = store.get('sent', null);
+    const waiting = sent && sent.sig === JSON.stringify(ch) && Date.now() - sent.at < 3600e3;
+    $('#sync-text').textContent = waiting ? 'Si tocaste Create, en unos minutos está en todos lados' : `${n} ${n === 1 ? 'cambio' : 'cambios'} solo en este dispositivo`;
+    $('#sync-go').textContent = waiting ? 'Otra vez' : 'Subir';
+  }
 
   function pendingRefs() {
     return ADDED.map(a => {
@@ -294,10 +402,18 @@
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
     try { const x = new URL(u); if (!x.hostname.includes('.')) return null; x.hash = ''; return x.href; } catch { return null; }
   }
+  // Folder chips that toggle; the pressed ones are read back with pickedFolders()
+  const folderToggles = (box, on) => put(box, folderList().map(f => h('button', {
+    class: 'chip', type: 'button', 'data-id': f.id, 'aria-pressed': String(on.includes(f.id)),
+    onclick: e => e.currentTarget.setAttribute('aria-pressed', String(e.currentTarget.getAttribute('aria-pressed') !== 'true')),
+  }, f.name)));
+  const pickedFolders = box => $$('.chip[aria-pressed="true"]', box).map(b => b.dataset.id);
   function openAdd(prefill) {
     const d = $('#add');
     $('#add-url').value = prefill || '';
     $('#add-err').hidden = true;
+    // Adding from inside a folder puts the page in it
+    folderToggles($('#add-folders'), S.tab === 'refs' && S.folder ? [S.folder] : []);
     if (typeof d.showModal !== 'function') { const u = window.prompt('Link de la web'); if (u && !addPage(u)) toast('Ese link no parece una web'); return; }
     d.showModal();
     $('#add-url').focus();
@@ -307,16 +423,24 @@
     const url = cleanUrl(text);
     if (!url) return false;
     const d = $('#add');
+    const folders = pickedFolders($('#add-folders'));
     if (d.open) d.close();
     const k = siteKey(url);
     const ref = REFS.find(r => r.url && siteKey(r.url) === k);
-    if (ref) { toast('Ya estaba en Referencias'); setTab('refs'); openDetail(ref.id); return true; }
-    if (!ADDED.some(a => siteKey(a.url) === k)) {
-      ADDED = [{ url, at: new Date().toISOString() }, ...ADDED];
-      store.set('added', ADDED);
+    if (ref) {
+      // Already there: it only goes into the chosen folders
+      if (folders.length) setFoldersOf(ref, [...new Set([...foldersOf(ref), ...folders])]);
+      toast(folders.length ? `Ya estaba: la sumé a ${folders.map(folderName).join(', ')}` : 'Ya estaba en Referencias');
+      setTab('refs');
+      openDetail(ref.id);
+      return true;
     }
-    window.open(issueUrl(url), '_blank', 'noopener');
-    Object.assign(S, { q: '', rubro: null, tag: null, atusOnly: false, favOnly: false });
+    const old = ADDED.find(a => siteKey(a.url) === k);
+    if (old) old.folders = [...new Set([...arr(old.folders), ...folders])];
+    else ADDED = [{ url, at: new Date().toISOString(), folders }, ...ADDED];
+    store.set('added', ADDED);
+    upload();
+    Object.assign(S, { q: '', rubro: null, tag: null, favOnly: false });
     $('#q').value = '';
     setTab('refs');
     render();
@@ -324,8 +448,7 @@
     return true;
   }
   // A reference from data.js: hidden here at once, and the issue that opens lets the robot
-  // (scripts/remove-ref.mjs) delete it everywhere. Undo only brings it back on this device.
-  const removeIssueUrl = r => `https://github.com/${REPO}/issues/new?` + new URLSearchParams({ title: 'Sacar: ' + r.name, body: `id: ${r.id}\n${r.url || ''}`, labels: 'sacar' });
+  // delete it everywhere. Undo only brings it back on this device.
   function removeRef(r) {
     confirmBox(`¿Sacar ${r.name} de Referencias? Después tocá Create en GitHub para sacarla de todos tus dispositivos.`, 'Sí, sacar', () => {
       HIDDEN.add(r.id);
@@ -333,7 +456,7 @@
       syncRefs();
       const wasInMix = S.mix.delete(r.id);
       store.set('mix', [...S.mix]);
-      window.open(removeIssueUrl(r), '_blank', 'noopener');
+      upload();
       if (S.sheet) requestClose();
       render();
       toast('Sacada. En GitHub tocá Create', { label: 'Deshacer', fn: () => {
@@ -357,11 +480,108 @@
   const allRefs = () => [...pendingRefs(), ...REFS, ...favRefs()];
   const findRef = id => allRefs().find(r => r.id === id);
 
+  // A reference's folders: pages added here and ★ sites keep them on themselves until uploaded;
+  // references from data.js take this device's pending choice over data.js
+  function foldersOf(r) {
+    const ok = new Set(folderList().map(f => f.id));
+    let list;
+    if (r.pending) list = (ADDED.find(a => a.url === r.url) || {}).folders;
+    else if (r.fav) list = (L.saved.find(s => s.link === r.url) || {}).folders;
+    else list = PEND.refs[r.id] || r.folders;
+    return arr(list).filter(id => ok.has(id));
+  }
+  function setFoldersOf(r, ids) {
+    if (r.pending) { const a = ADDED.find(x => x.url === r.url); if (a) { a.folders = ids; store.set('added', ADDED); } }
+    else if (r.fav) { const s = L.saved.find(x => x.link === r.url); if (s) { s.folders = ids; store.set('saved', L.saved); } }
+    else {
+      const base = arr((ALL_REFS.find(x => x.id === r.id) || {}).folders);
+      if (sameSet(ids, base)) delete PEND.refs[r.id]; else PEND.refs[r.id] = ids;
+      savePend();
+    }
+    render();
+  }
+
+  /* ---------- folders ---------- */
+  function renderFolders() {
+    const list = folderList();
+    if (S.folder && !list.some(f => f.id === S.folder)) S.folder = null;
+    const counts = new Map();
+    for (const r of allRefs()) for (const id of foldersOf(r)) counts.set(id, (counts.get(id) || 0) + 1);
+    const pick = id => () => { S.folder = S.folder === id ? null : id; store.set('folder', S.folder); render(); restoreFocus('folder:' + id); };
+    put($('#folders'),
+      list.map(f => h('button', { class: 'folder', type: 'button', 'aria-pressed': String(S.folder === f.id), 'data-key': 'folder:' + f.id, onclick: pick(f.id) },
+        f.name, h('span', { class: 'c' }, counts.get(f.id) || 0))),
+      S.folder ? h('button', { class: 'folder edit', type: 'button', onclick: () => openFolderDlg(S.folder) }, 'Editar') : null,
+      h('button', { class: 'folder new', type: 'button', onclick: () => openFolderDlg(null) }, '+ Carpeta'));
+  }
+  // New folder (id null) or rename/delete one. "then" gets the new folder's id.
+  let folderDlg = { id: null, then: null };
+  function openFolderDlg(id, then) {
+    const f = id ? folderList().find(x => x.id === id) : null;
+    folderDlg = { id: f ? f.id : null, then: then || null };
+    $('#folder-title').textContent = f ? 'Nombre de la carpeta' : 'Carpeta nueva';
+    $('#folder-name').value = f ? f.name : '';
+    $('#folder-del').hidden = !f;
+    $('#folder-dlg').showModal();
+    $('#folder-name').focus();
+  }
+  function saveFolderDlg() {
+    const name = $('#folder-name').value.trim().slice(0, 40);
+    if (!name) { $('#folder-name').focus(); return; }
+    const { id, then } = folderDlg;
+    $('#folder-dlg').close();
+    if (id) {
+      const added = PEND.folderAdds.find(f => f.id === id);
+      const base = DATA_FOLDERS.find(f => f.id === id);
+      if (added) added.name = name;
+      else if (base && base.name === name) delete PEND.folderRenames[id];
+      else PEND.folderRenames[id] = name;
+      savePend();
+      render();
+      return;
+    }
+    const nid = findFolderByName(name) || createFolder(name);
+    if (then) then(nid);
+    else { S.folder = nid; store.set('folder', nid); render(); }
+  }
+  function deleteFolder() {
+    const id = folderDlg.id;
+    if (!id) return;
+    $('#folder-dlg').close();
+    confirmBox(`¿Borrar la carpeta ${folderName(id)}? Las webs siguen en Referencias.`, 'Sí, borrar', () => {
+      const i = PEND.folderAdds.findIndex(f => f.id === id);
+      if (i >= 0) PEND.folderAdds.splice(i, 1);
+      else if (!PEND.folderRemoves.includes(id)) PEND.folderRemoves.push(id);
+      delete PEND.folderRenames[id];
+      savePend();
+      if (S.folder === id) { S.folder = null; store.set('folder', null); }
+      render();
+      toast('Carpeta borrada');
+    });
+  }
+  // The detail's folder chips: tap to put the reference in a folder or take it out
+  function detailFolders(r) {
+    const mine = foldersOf(r);
+    return h('div', { class: 'd-folders' },
+      h('span', { class: 'lbl' }, 'Carpetas'),
+      folderList().map(f => h('button', {
+        class: 'chip', type: 'button', 'aria-pressed': String(mine.includes(f.id)), 'data-key': 'dfold:' + f.id,
+        onclick: () => {
+          const now = foldersOf(r);
+          setFoldersOf(r, now.includes(f.id) ? now.filter(x => x !== f.id) : [...now, f.id]);
+          restoreFocus('dfold:' + f.id);
+        },
+      }, f.name)),
+      h('button', { class: 'chip', type: 'button', onclick: () => openFolderDlg(null, id => setFoldersOf(r, [...foldersOf(r), id])) }, '+ Nueva'));
+  }
+
   function render() {
     renderCounts();
+    renderFolders();
     renderFilters();
     renderGrid();
     renderMix();
+    renderSync();
     if (S.sheet && S.sheet.mode === 'detail') renderDetail();
   }
 
@@ -379,18 +599,17 @@
     const counts = new Map();
     for (const r of REFS) for (const t of arr(r.tags)) counts.set(t, (counts.get(t) || 0) + 1);
     const tags = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'es')).slice(0, 14).map(([t]) => t);
-    const atusN = REFS.filter(r => r.atus).length;
+    const savedN = L.saved.length + REFS.filter(r => r.gallery).length;
     put(box,
-      chip('Todas', !S.atusOnly && !S.favOnly && !S.rubro && !S.tag, () => { S.atusOnly = false; S.favOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
-      L.saved.length ? chip(`★ Favoritos ${L.saved.length}`, S.favOnly, () => { S.favOnly = !S.favOnly; render(); }, 'f:fav') : null,
-      atusN ? chip('Para Atus', S.atusOnly, () => { S.atusOnly = !S.atusOnly; render(); }, 'f:atus') : null,
+      chip('Todas', !S.favOnly && !S.rubro && !S.tag, () => { S.favOnly = false; S.rubro = null; S.tag = null; render(); }, 'f:all'),
+      savedN ? chip(`★ Guardadas ${savedN}`, S.favOnly, () => { S.favOnly = !S.favOnly; render(); }, 'f:fav') : null,
       rubros.map(rb => chip(rb, S.rubro === rb, () => { S.rubro = S.rubro === rb ? null : rb; render(); }, 'f:r:' + rb)),
       h('span', { class: 'sep', 'aria-hidden': 'true' }),
       tags.map(t => chip('#' + t, S.tag === t, () => { S.tag = S.tag === t ? null : t; render(); }, 'f:t:' + t)));
   }
 
   function visibleRefs() {
-    let list = allRefs().filter(r => (!S.favOnly || (r.fav && !r.pending)) && (!S.atusOnly || r.atus) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
+    let list = allRefs().filter(r => (!S.folder || foldersOf(r).includes(S.folder)) && (!S.favOnly || (r.fav && !r.pending) || r.gallery) && (!S.rubro || r.rubro === S.rubro) && (!S.tag || arr(r.tags).includes(S.tag)));
     const groups = parseQuery(S.q);
     if (!groups.length) return list;
     return list.map(r => [r, matchScore(r._f, groups)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([r]) => r);
@@ -416,7 +635,7 @@
     const shots = shotsOf(r);
     let imgA = null, imgB = null;
     if (shots[0]) {
-      imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null });
+      imgA = h('img', { src: imgSrc(shots[0]), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav || r.gallery ? 'no-referrer' : null });
       imgA.addEventListener('error', () => imgA.replaceWith(placeholder(r.name, r.palette)), { once: true });
       if (r.pending) retryShot(imgA, 0);
     }
@@ -430,7 +649,7 @@
     return h('article', { class: 'card' },
       h('button', { class: 'shot', type: 'button', 'aria-label': 'Ver ' + r.name, 'data-key': 'card:' + r.id, onclick: e => openDetail(r.id, e.currentTarget) },
         imgA || placeholder(r.name, r.palette), imgB, r.atus ? h('span', { class: 'badge' }, 'Atus') : r.pending ? h('span', { class: 'badge' }, 'Nueva') : r.fav ? h('span', { class: 'badge' }, '★') : null),
-      h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, r.fav ? r.source : host(r.url)) : null),
+      h('div', { class: 'card-head' }, h('h3', null, r.name), r.url ? h('span', { class: 'dom' }, r.fav || r.gallery ? r.source || host(r.url) : host(r.url)) : null),
       (hexes.length || fonts.length) ? h('div', { class: 'card-dna' },
         hexes.length ? h('span', { class: 'sws' }, hexes.map(x => h('i', { style: { background: x } }))) : null,
         fonts.length ? h('span', { class: 'fonts' }, fonts.join(' · ')) : null) : null,
@@ -457,7 +676,9 @@
     const grid = $('#grid');
     if (!DATA) { put(grid, notice('No encontré data.js', 'Tiene que estar al lado de index.html.')); return; }
     const list = visibleRefs();
-    if (!list.length) put(grid, notice(S.q ? `Ninguna referencia con “${S.q}”` : 'Ninguna con esos filtros', null));
+    if (!list.length) put(grid, S.folder && !S.q && !S.rubro && !S.tag && !S.favOnly
+      ? notice(`${folderName(S.folder)} está vacía`, 'Guardá webs acá con la ★ de Descubrir, con + Agregar o desde la ficha de cada referencia.')
+      : notice(S.q ? `Ninguna referencia con “${S.q}”` : 'Ninguna con esos filtros', null));
     else {
       if (grid.querySelector('.notice')) put(grid);
       reconcile(grid, list.map(getCard));
@@ -571,7 +792,7 @@
   function dnaList(r) {
     const rows = [];
     if (r.pending) return h('dl', { class: 'dl' }, h('dt', null, 'Estado'), h('dd', null, 'Se está sumando. Cuando el robot termina aparece con captura, tipografías y colores en todos tus dispositivos.'));
-    if (r.fav) {
+    if (r.fav || r.gallery) {
       if (r.source) rows.push(['Galería', r.source]);
       if (arr(r.cats).length) rows.push(['Temas', arr(r.cats).join(', ')]);
       if (r.desc) rows.push(['Cómo es', r.desc]);
@@ -615,13 +836,13 @@
           h('button', { class: 'btn solid', type: 'button', 'data-tip': 'Para pegarle a Claude', onclick: () => copy(promptOf(r), 'Prompt copiado') }, 'Copiar prompt'),
           h('button', { class: 'btn ' + (inMix ? 'lime' : ''), type: 'button', 'aria-pressed': String(inMix), 'data-key': 'd-mix', 'data-tip': inMix ? 'Sacar de Mezclar' : 'Sumar a Mezclar', onclick: () => toggleMix(r.id, 'd-mix') }, inMix ? '✓ Mezcla' : '+ Mezcla'),
           safeHref(r.url) ? h('a', { class: 'btn ghost', href: r.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Ver la web en vivo' }, 'Abrir ↗') : null,
-          r.pending ? h('a', { class: 'btn ghost', href: issueUrl(r.url), target: '_blank', rel: 'noopener noreferrer', 'data-tip': 'Si no tocaste Create' }, 'Subir ↗') : null,
           r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de Referencias', onclick: () => removeAdded(r.url) }, 'Sacar') : null,
-          r.fav && !r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de favoritos', onclick: () => { toggleSave({ link: r.url }); } }, 'Sacar') : null,
+          r.fav && !r.pending ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'Sacar de guardadas', onclick: () => { toggleSave({ link: r.url }); } }, 'Sacar') : null,
           !r.fav ? h('button', { class: 'btn ghost', type: 'button', 'data-tip': 'De todos tus dispositivos', onclick: () => removeRef(r) }, 'Sacar') : null),
+        detailFolders(r),
         tags.length ? h('div', { class: 'tags' }, tags.map(t => h('button', {
           class: 'tag', type: 'button',
-          onclick: () => { S.tag = t; S.atusOnly = false; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
+          onclick: () => { S.tag = t; S.rubro = null; S.lastFocus = null; requestClose(); setTab('refs'); render(); },
         }, '#' + t))) : null),
       r.likes ? h('p', { class: 'quote' }, r.likes) : null,
       r.avoid ? h('p', { class: 'prose' }, 'Evitar: ' + r.avoid) : null,
@@ -632,11 +853,11 @@
 
   /* ---------- mix ---------- */
   const ASPECTS = [
-    { k: 'type', label: 'Tipografía', hint: 'Poppins 700 en mayúscula…', get: r => r.fav ? r.mixText.type : arr(r.fonts).join('; ') },
-    { k: 'color', label: 'Paleta', hint: 'negro, blanco y un lima #C6F432…', get: r => r.fav ? r.mixText.color : arr(r.palette).join(', ') },
-    { k: 'layout', label: 'Layout', hint: 'hero con foto a sangre…', get: r => r.fav ? r.mixText.layout : r.layout || '' },
-    { k: 'motion', label: 'Movimiento', hint: 'scroll suave, texto por palabra…', get: r => r.fav ? r.mixText.motion : r.motion || '' },
-    { k: 'tone', label: 'Actitud', hint: 'sobria pero con humor…', get: r => r.fav ? r.mixText.tone : r.likes || r.dna || '' },
+    { k: 'type', label: 'Tipografía', hint: 'Poppins 700 en mayúscula…', get: r => r.mixText ? r.mixText.type : arr(r.fonts).join('; ') },
+    { k: 'color', label: 'Paleta', hint: 'negro, blanco y un lima #C6F432…', get: r => r.mixText ? r.mixText.color : arr(r.palette).join(', ') },
+    { k: 'layout', label: 'Layout', hint: 'hero con foto a sangre…', get: r => r.mixText ? r.mixText.layout : r.layout || '' },
+    { k: 'motion', label: 'Movimiento', hint: 'scroll suave, texto por palabra…', get: r => r.mixText ? r.mixText.motion : r.motion || '' },
+    { k: 'tone', label: 'Actitud', hint: 'sobria pero con humor…', get: r => r.mixText ? r.mixText.tone : r.likes || r.dna || '' },
     { k: 'extra', label: 'Otras cosas', hint: 'secciones, contenido, qué evitar…', get: () => '' },
   ];
   const mixRefs = () => allRefs().filter(r => S.mix.has(r.id));
@@ -658,7 +879,7 @@
     put($('#mix-picker'), allRefs().map(r => {
       const on = S.mix.has(r.id);
       const shot = shotsOf(r)[0];
-      const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav ? 'no-referrer' : null }) : placeholder(r.name, r.palette);
+      const img = shot ? h('img', { src: imgSrc(shot), alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: r.fav || r.gallery ? 'no-referrer' : null }) : placeholder(r.name, r.palette);
       return h('button', { type: 'button', class: 'pick', 'aria-pressed': String(on), 'data-key': 'mix:' + r.id, title: r.name, onclick: () => toggleMix(r.id, 'mix:' + r.id) },
         h('span', { class: 'pick-img' }, img), h('span', { class: 'pick-name' }, (r.fav && !r.pending ? '★ ' : '') + r.name));
     }));
@@ -815,6 +1036,11 @@
     clearConfirm: false, rendered: false,
   };
 
+  // ★ sites the robot already put in data.js leave this device's list
+  L.saved = L.saved.filter(s => s && s.link && !ALL_REFS.some(r => r.url === s.link));
+  store.set('saved', L.saved);
+  const isSaved = link => L.saved.some(s => s.link === link) || REFS.some(r => r.url === link);
+
   const liveData = () => window.ATUS_LIVE || null;
   let allCache = [], allFrom = null;
   // Items are prepared once per load: search fields, taste score and timestamp
@@ -928,7 +1154,7 @@
       img = h('img', { src: it.image, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' });
       img.addEventListener('error', () => img.replaceWith(placeholder(title)), { once: true });
     }
-    const saved = L.saved.some(s => s.link === it.link);
+    const saved = isSaved(it.link);
     return h('article', { class: 'card live' },
       h('div', { class: 'shot-wrap', 'data-pour': 'below contain' },
         h('a', { class: 'shot', href: it.link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Ver ${title}` },
@@ -941,7 +1167,7 @@
 
   const liveCache = new Map();
   function getLiveCard(it) {
-    const sig = String(L.saved.some(s => s.link === it.link));
+    const sig = String(isSaved(it.link));
     const c = liveCache.get(it.link);
     if (c && c.sig === sig) return c.el;
     const el = liveCard(it);
@@ -1057,23 +1283,48 @@
   }
 
   // Starred sites become references (see favRefs), so Referencias and Mezclar refresh too
+  // ★: saving asks for a folder first (when there are folders); taking it out of a site the robot
+  // already uploaded goes through "Sacar", the same as in Referencias
   function toggleSave(it) {
+    const uploaded = REFS.find(r => r.url === it.link);
+    if (uploaded && !L.saved.some(s => s.link === it.link)) { removeRef(uploaded); return; }
+    if (L.saved.some(s => s.link === it.link)) { saveSite(it, null); return; }
+    if (!folderList().length) { saveSite(it, []); return; }
+    openPick(it);
+  }
+  function saveSite(it, folders) {
     const key = 'save:' + it.link;
-    const wasSaved = L.saved.some(s => s.link === it.link);
+    const wasSaved = folders === null;
     if (wasSaved) {
       L.saved = L.saved.filter(s => s.link !== it.link);
       S.mix.delete('fav:' + it.link);
       store.set('mix', [...S.mix]);
     } else {
       L.saved = [{ link: it.link, title: it.title, name: it.name || '', source: it.source, image: it.image || '', date: it.date || '',
-        cats: arr(it.cats).slice(0, 5), desc: it.desc || '', tagline: it.tagline || '' }, ...L.saved];
+        cats: arr(it.cats).slice(0, 5), desc: it.desc || '', tagline: it.tagline || '', folders }, ...L.saved];
     }
     store.set('saved', L.saved);
     L.clearConfirm = false;
     render();
     renderLive();
     restoreFocus(key);
-    toast(wasSaved ? 'Sacada de favoritos' : '★ Guardada en Referencias');
+    toast(wasSaved ? 'Sacada de guardadas' : folders.length ? `★ Guardada en ${folders.map(folderName).join(', ')}` : '★ Guardada en Referencias');
+  }
+  // "Guardar en": one tap on a folder saves there; "+ Nueva" makes one and saves there
+  let pickFor = null;
+  function openPick(it) {
+    pickFor = it;
+    put($('#pick-folders'),
+      folderList().map(f => h('button', { class: 'chip', type: 'button', onclick: () => pickDone([f.id]) }, f.name)),
+      h('button', { class: 'chip', type: 'button', onclick: () => { $('#pick-new-form').hidden = false; $('#pick-new').focus(); } }, '+ Nueva'));
+    $('#pick-new-form').hidden = true;
+    $('#pick-new').value = '';
+    $('#pick').showModal();
+  }
+  function pickDone(folders) {
+    $('#pick').close();
+    if (pickFor) saveSite(pickFor, folders);
+    pickFor = null;
   }
   function copySaved() {
     const lines = L.saved.map(s => `- ${s.name || s.title} (${s.source}): ${s.link}`);
@@ -1141,14 +1392,25 @@
       e.preventDefault();
       if (!addPage($('#add-url').value)) { $('#add-err').hidden = false; $('#add-url').focus(); }
     });
-    // A click outside the box (on the dark backdrop) closes it; the padding inside doesn't
-    $('#add').addEventListener('click', e => {
+    // A click outside a box (on the dark backdrop) closes it; the padding inside doesn't
+    for (const d of $$('#add, #pick, #folder-dlg')) d.addEventListener('click', e => {
       const b = e.currentTarget.getBoundingClientRect();
       if (e.target === e.currentTarget && (e.clientX < b.left || e.clientX > b.right || e.clientY < b.top || e.clientY > b.bottom)) e.currentTarget.close();
     });
+    $('#pick-none').addEventListener('click', () => pickDone([]));
+    $('#pick-new-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const name = $('#pick-new').value.trim().slice(0, 40);
+      if (!name) { $('#pick-new').focus(); return; }
+      pickDone([findFolderByName(name) || createFolder(name)]);
+    });
+    $('#folder-form').addEventListener('submit', e => { e.preventDefault(); saveFolderDlg(); });
+    $('#folder-no').addEventListener('click', () => $('#folder-dlg').close());
+    $('#folder-del').addEventListener('click', deleteFolder);
+    $('#sync-go').addEventListener('click', upload);
     // Pasting a link anywhere in Referencias (outside a field) opens the box with it
     document.addEventListener('paste', e => {
-      if (S.tab !== 'refs' || S.sheet || isTyping(e.target) || $('#add').open || $('#confirm').open) return;
+      if (S.tab !== 'refs' || S.sheet || isTyping(e.target) || $$('dialog[open]').length) return;
       const url = cleanUrl(e.clipboardData && e.clipboardData.getData('text'));
       if (!url) return;
       e.preventDefault();

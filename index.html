@@ -11,8 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Host+Grotesk:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=20261030-1">
-<link rel="stylesheet" href="botones.css?v=20261030-1">
+<link rel="stylesheet" href="styles.css?v=20261030-2">
+<link rel="stylesheet" href="botones.css?v=20261030-2">
 </head>
 <body>
 
@@ -38,6 +38,7 @@
         </div>
         <div data-pour="below"><button class="btn solid" type="button" id="add-open" data-tip="Pegá el link de una web">+ Agregar</button></div>
       </div>
+      <div class="folders scroll-row" id="folders"></div>
       <div class="frow scroll-row" id="filters"></div>
     </div>
     <div class="grid" id="grid"></div>
@@ -97,14 +98,35 @@
     <div class="sheet-body" id="sheet-body"></div>
   </div>
 </div>
+<div class="sync" id="sync" hidden><span id="sync-text"></span><button class="btn sm lime" type="button" id="sync-go">Subir</button></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <dialog class="confirm" id="add" aria-labelledby="add-title">
   <form id="add-form" novalidate>
     <label class="fld"><span id="add-title">Link de la web</span><input class="in" id="add-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…"></label>
+    <div class="frow pick-folders" id="add-folders"></div>
     <p class="add-err" id="add-err" role="alert" hidden>Ese link no parece una web. Probá copiándolo de nuevo.</p>
     <p class="add-note">Después tocá <b>Create</b> en GitHub y queda en todos tus dispositivos.</p>
     <div class="confirm-actions">
       <button class="btn ghost" type="button" id="add-no">Cancelar</button>
+      <button class="btn solid" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="confirm" id="pick" aria-labelledby="pick-title">
+  <p id="pick-title">Guardar en</p>
+  <div class="frow pick-folders" id="pick-folders"></div>
+  <form class="pick-new" id="pick-new-form" hidden><input class="in" id="pick-new" autocomplete="off" placeholder="Nombre de la carpeta" maxlength="40"><button class="btn solid" type="submit">Crear</button></form>
+  <div class="confirm-actions">
+    <button class="btn ghost" type="button" id="pick-none">Sin carpeta</button>
+  </div>
+</dialog>
+<dialog class="confirm" id="folder-dlg" aria-labelledby="folder-title">
+  <form id="folder-form" novalidate>
+    <label class="fld"><span id="folder-title">Carpeta</span><input class="in" id="folder-name" autocomplete="off" maxlength="40" placeholder="Por ejemplo: U.Dent"></label>
+    <div class="confirm-actions">
+      <button class="btn ghost danger-text" type="button" id="folder-del">Borrar carpeta</button>
+      <span class="grow"></span>
+      <button class="btn ghost" type="button" id="folder-no">Cancelar</button>
       <button class="btn solid" type="submit">Guardar</button>
     </div>
   </form>
@@ -118,8 +140,8 @@
 </dialog>
 
 <!-- The ?v= number changes on every update so phones never mix an old app.js with a new page -->
-<script src="data.js?v=20261030-1"></script>
-<script src="botones.js?v=20261030-1"></script>
-<script src="app.js?v=20261030-1"></script>
+<script src="data.js?v=20261030-2"></script>
+<script src="botones.js?v=20261030-2"></script>
+<script src="app.js?v=20261030-2"></script>
 </body>
 </html>
