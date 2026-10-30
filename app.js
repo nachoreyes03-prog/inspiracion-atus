@@ -907,7 +907,11 @@
     if (L.cat) { const c = norm(L.cat); list = list.filter(i => arr(i.cats).some(x => norm(x) === c)); }
     if (L.filter === 'foryou') list = list.filter(i => i._score >= 3);
     const groups = parseQuery($('#dq').value);
-    if (groups.length) return rankLive(list, groups);
+    if (groups.length) {
+      // Best matches first, but the ones you skipped with "Otra tanda" go last
+      const ranked = rankLive(list, groups);
+      return [...ranked.filter(i => !L.seen.has(i.link)), ...ranked.filter(i => L.seen.has(i.link))];
+    }
     if (L.filter === 'saved') return list;
     if (L.mode === 'random') {
       if (!L.rank) newRank();
@@ -1028,15 +1032,25 @@
   }
 
   function nextBatch() {
-    // Everything on screen counts as seen, then a fresh random order brings unseen sites first
+    const q = $('#dq').value.trim();
+    if (L.filter === 'saved') L.filter = 'all';
+    const list = liveList();
+    // A search with few results: they're all on screen already
+    if (q && list.length <= L.visible.length) { toast(`Son todas las que hay con “${q}” (${fmtN(list.length)}). Buscá más en las galerías de arriba.`); return; }
+    // Everything on screen counts as seen; unseen sites come first in the next batch.
+    // A search keeps its words: the next batch is more of what you searched.
     for (const i of L.visible) L.seen.add(i.link);
+    if (list.length && list.every(i => L.seen.has(i.link))) {
+      for (const i of list) L.seen.delete(i.link);
+      if (q) toast(`Ya viste todas con “${q}”: vuelven a empezar`);
+    }
     if (L.seen.size >= liveAll().length) L.seen.clear();
     store.set('seen', [...L.seen].slice(-6000));
-    L.mode = 'random';
-    store.set('liveMode', 'random');
-    if (L.filter === 'saved') L.filter = 'all';
-    if ($('#dq').value) { $('#dq').value = ''; store.set('dq', ''); renderGalleries(); }
-    newRank();
+    if (!q) {
+      L.mode = 'random';
+      store.set('liveMode', 'random');
+      newRank();
+    }
     L.shown = PAGE;
     renderLive();
     $('#live-head').scrollIntoView({ block: 'start', behavior: 'smooth' });

@@ -181,25 +181,33 @@ if (!okCount) {
   process.exit(1);
 }
 
-// Rubro sweep on One Page Love: search results and the matching tag page
+// Rubro sweep: One Page Love's search and tag pages and Minimal Gallery's search (both WordPress,
+// 10 sites per page). Reads up to RUBRO_PAGES pages of each, until one comes back empty.
+const RUBRO_PAGES = 5;
 const opl = FEEDS.find(f => f.name === 'One Page Love');
+const mg = FEEDS.find(f => f.name === 'Minimal Gallery');
 const slots = Math.ceil(RUBROS.length / RUBRO_SLICE);
 const slot = Math.floor(Date.now() / (6 * 3600e3)) % slots;
 const terms = ALL_RUBROS ? RUBROS : RUBROS.slice(slot * RUBRO_SLICE, (slot + 1) * RUBRO_SLICE);
 let rubroHits = 0;
 for (const term of terms) {
-  const urls = [
-    `https://onepagelove.com/?s=${encodeURIComponent(term)}&feed=rss2`,
-    `https://onepagelove.com/tag/${term.replace(/\s+/g, '-')}/feed`,
+  const q = encodeURIComponent(term);
+  const sources = [
+    [opl, p => `https://onepagelove.com/?s=${q}&feed=rss2&paged=${p}`],
+    [opl, p => `https://onepagelove.com/tag/${term.replace(/\s+/g, '-')}/feed?paged=${p}`],
+    [mg, p => `https://minimal.gallery/?s=${q}&feed=rss2&paged=${p}`],
   ];
-  for (const url of urls) {
-    try {
-      for (const raw of await readPage(url)) {
-        const it = parseItem(raw, opl);
+  for (const [feed, url] of sources) {
+    for (let p = 1; p <= RUBRO_PAGES; p++) {
+      let items = [];
+      try { items = await readPage(url(p)); } catch { items = []; } // a rubro without results is fine
+      for (const raw of items) {
+        const it = parseItem(raw, feed);
         if (it) { store(it, term); rubroHits++; }
       }
-    } catch { /* a rubro without results is fine */ }
-    await sleep(400);
+      await sleep(400);
+      if (items.length < 10) break;
+    }
   }
 }
 console.log(`Rubros (${terms.length}): ${rubroHits} hits`);
