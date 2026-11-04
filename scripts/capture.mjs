@@ -164,15 +164,22 @@ const dist = (a, b) => { const x = rgb(a), y = rgb(b); return Math.hypot(x[0] - 
 const lum = h => { const [r, g, b] = rgb(h); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
 const GENERIC_FONTS = /^(-apple-system|blinkmacsystemfont|system-ui|segoe ui|roboto|helvetica|helvetica neue|arial|sans-serif|serif|monospace|times|times new roman|ui-sans-serif|ui-serif|ui-monospace|inherit)$/i;
 
+// The name from the host when the page gives nothing better ("estoesronda.com" → "Estoesronda")
+const hostName = url => { const l = hostOf(url).split('.')[0] || 'Web'; return l.charAt(0).toUpperCase() + l.slice(1); };
+// Pages that only show a bot check ("Just a moment...", Cloudflare and the like)
+const BOT_CHECK = /^(just a moment|attention required|access denied|checking your browser|verifying you are human|please wait|one moment|security check|ddos-guard|403 forbidden|are you a robot)/i;
+
+// The site's own name: og:site_name or the title, cut at "|", "–", ": " ("Fontshare: Quality Fonts. Free."
+// → "Fontshare"), preferring the part that matches the host
 function pickName(a, url) {
   const label = hostOf(url).split('.')[0];
   const squash = s => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
-  if (a.site && a.site.length <= 40) return a.site.trim();
-  const parts = a.title.split(/\s+[|–—·•-]\s+|:\s+/).map(s => s.trim()).filter(Boolean);
+  const split = s => String(s || '').split(/\s+[|–—·•-]\s+|:\s+/).map(p => p.trim()).filter(Boolean);
+  const parts = [...split(a.site), ...split(a.title)].filter(p => !BOT_CHECK.test(p));
   const own = parts.find(p => squash(p) && (squash(label).includes(squash(p)) || squash(p).includes(squash(label))));
   const notGeneric = parts.find(p => !/^(home|inicio|index|welcome|bienvenid[oa]s?|portfolio)$/i.test(p));
-  const name = own || notGeneric || parts[0] || '';
-  return name && name.length <= 40 ? name : label.charAt(0).toUpperCase() + label.slice(1);
+  const name = own || notGeneric || '';
+  return name && name.length <= 40 ? name : hostName(url);
 }
 
 function pickFonts(a) {
@@ -282,6 +289,12 @@ export async function captureSite({ c }, url) {
   const res = await c.send('Runtime.evaluate', { expression: `(${analyze})()`, returnByValue: true });
   if (res.exceptionDetails) throw new Error('no pude leer la página');
   const a = res.result.value;
+  // A bot check instead of the site: keep only the name from the host, no screenshot or colors
+  if (BOT_CHECK.test(String(a.title || '').trim())) {
+    const name = hostName(url);
+    const prompt = [`Diseñá una web con la dirección visual de ${name} (${url}).`, 'Abrí la web y tomá su tipografía, paleta, layout y movimiento como dirección.', 'Adaptalo a: [tu proyecto].'].join('\n');
+    return { blocked: true, name, tags: [], fonts: [], palette: [], stack: '', prompt, shot1: null, shot2: null, analysis: a };
+  }
 
   const shot1 = Buffer.from((await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 80 })).data, 'base64');
   // The wheel scrolls pages with their own scroller (Lenis, a scrolling div) too

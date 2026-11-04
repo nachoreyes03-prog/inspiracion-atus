@@ -125,7 +125,7 @@ async function main() {
         browser = browser || await startBrowser();
         const s = await captureSite(browser, a.url);
         const id = idFor(a.url, taken());
-        const shots = [`img/${id}.jpg`];
+        const shots = s.shot1 ? [`img/${id}.jpg`] : [];
         if (s.shot2) shots.push(`img/${id}-2.jpg`);
         // "auto": filled in by the robot; Claude can complete layout, motion, dna and rubro later
         const entry = { id, name: s.name, url: a.url, rubro: '', atus: false, tags: s.tags, likes: '', avoid: '', shots, fonts: s.fonts, palette: s.palette, layout: '', motion: '', stack: s.stack, dna: '', prompt: s.prompt, auto: true };
@@ -133,11 +133,13 @@ async function main() {
         setFolders(entry, fs);
         const dir = DRY ? OUT : path.join(ROOT, 'img');
         await mkdir(dir, { recursive: true });
-        await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
+        if (s.shot1) await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
         if (s.shot2) await writeFile(path.join(dir, `${id}-2.jpg`), s.shot2);
         if (DRY) await writeFile(path.join(OUT, `${id}.json`), JSON.stringify({ entry, analysis: s.analysis }, null, 2));
         fresh.push(entry);
-        reply.push(`Agregué **${s.name}**${fs.length ? ` en ${folderNames(fs)}` : ''}, con capturas, tipografías y colores`);
+        reply.push(s.blocked
+          ? `Agregué **${s.name}**${fs.length ? ` en ${folderNames(fs)}` : ''} sin captura: la web no deja entrar al robot (pide verificar que sos humano)`
+          : `Agregué **${s.name}**${fs.length ? ` en ${folderNames(fs)}` : ''}, con capturas, tipografías y colores`);
       } catch (e) {
         reply.push(`No pude agregar ${a.url}: ${e.message}`);
       }
@@ -167,9 +169,9 @@ async function main() {
         const id = prefix + idFor(a.url, new Set(list.map(g => String(g.id).slice(prefix.length))));
         const dir = DRY ? OUT : path.join(ROOT, 'img');
         await mkdir(dir, { recursive: true });
-        await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
-        list.unshift({ id, name: s.name, url: a.url, category: a.category, note: '', shots: [`img/${id}.jpg`] });
-        reply.push(`Agregué **${s.name}** a ${label} (${a.category})`);
+        if (s.shot1) await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
+        list.unshift({ id, name: s.name, url: a.url, category: a.category, note: '', shots: s.shot1 ? [`img/${id}.jpg`] : [] });
+        reply.push(`Agregué **${s.name}** a ${label} (${a.category})${s.blocked ? ' sin captura: la web no deja entrar al robot' : ''}`);
       } catch (e) {
         reply.push(`No pude agregar ${a.url}: ${e.message}`);
       }
