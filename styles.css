@@ -270,7 +270,7 @@ img { max-width: 100%; }
 .mode { appearance: none; border: 0; border-radius: 999px; background: none; color: var(--ink-2); font: 500 0.8125rem/1 var(--font); padding: 8px 12px; cursor: pointer; white-space: nowrap; transition: background-color .15s var(--ease), color .15s var(--ease); }
 .mode:hover { color: var(--ink); }
 .mode[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-body[data-mode="graphic"] .tabs { display: none; }
+body[data-mode="graphic"] .tabs, body[data-mode="sound"] .tabs { display: none; }
 /* Graphic design: categories and "+ Agregar" on one line */
 .g-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .g-head .scroll-row { flex: 1; min-width: 0; margin-right: 0; padding-right: 0; }
@@ -373,5 +373,6 @@ body.has-sync main { padding-bottom: 72px; }
 @media (max-width: 760px) {
   .top-in { gap: 0 12px; }
   .mode { padding: 7px 9px; font-size: 0.75rem; }
+  .mode .m-long { display: none; } /* "Web | Graphic | Sound" fits next to the name */
 }
 .live-actions { display: flex; gap: 8px; flex: none; }

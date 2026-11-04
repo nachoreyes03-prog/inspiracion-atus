@@ -437,6 +437,16 @@ window.ATUS_DATA = {
       "shots": ["img/g-colorslol.jpg"]
     }
   ],
+  "sound": [
+    {
+      "id": "s-freesound",
+      "name": "Freesound",
+      "url": "https://freesound.org/",
+      "category": "Efectos",
+      "note": "Banco colaborativo de más de 700.000 sonidos y efectos con licencia Creative Commons. Buscás por palabra, escuchás y bajás (hay que registrarse).",
+      "shots": ["img/s-freesound.jpg"]
+    }
+  ],
   "taste": {
     "summary": "Me gustan las webs donde la tipografía hace el trabajo: grotesk enorme y apretada, una base casi monocroma con un solo acento y fotos o texturas que le dan cuerpo. Y cada vez más, portfolios con una idea fuerte y humor: televisores, sistemas operativos viejos, discos, libros.",
     "rules": ["Grotesk protagonista a tamaño enorme con tracking negativo (Neue Montreal, Neue Haas, Diatype, Switzer, Poppins): 10 de 15.","Contraste de pesos dentro de una misma familia, fino contra bold (Julia Marro, Cactus).","Base casi monocroma con un único acento: lima o verde ácido en 5 de 15 (Room & Pillar, Varsity, Julia Marro, Cactus, Analogue).","El portfolio como objeto o metáfora: pared de televisores, sistema operativo de los 90, discos 3D, fotolibro escaneado (4 de 15).","Humor y juego: 6 de 15 (Cactus, Analogue, Studio Monstro, Pesselev, Sumner Howells, Ronda).","Fotografía editorial a sangre, muchas veces en blanco y negro: 5 de 15.","Grano o textura sobre fondos lisos: 5 de 15 (Juan Mora, Mersi, Julia Marro, Cactus, A24).","Metadata como diseño: fecha y hora en vivo, fichas técnicas con líneas de 1px, contadores (01/05), etiquetas entre paréntesis o corchetes en mono.","Grillas suizas marcadas con líneas de 1px (Varsity, Juan Mora, Mersi, A24).","Scroll suave y animación cuidada: Lenis en 7 de 15 y GSAP en 7 de 15."],

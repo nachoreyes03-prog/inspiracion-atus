@@ -36,9 +36,9 @@ Para verla en tu compu, abrí `index.html` con doble clic.
 
 Si el repo es público, cualquiera con el link puede verla.
 
-## Web design y Graphic design
+## Web design, Graphic design y Sound design
 
-Arriba, al lado del nombre, elegís la mitad: **Web design** (Referencias, Descubrir, Mezclar, Gusto) o **Graphic design**: sitios de recursos por categoría (mockups, texturas, logos, tipografías, colores). En Graphic design, **+ Agregar** suma un sitio con su categoría (o una nueva) y **Sacar** lo saca; los dos se suben con **Subir**, como todo lo demás. Los recursos están en `data.js`, en la lista `graphic`.
+Arriba, al lado del nombre, elegís la parte: **Web design** (Referencias, Descubrir, Mezclar, Gusto), **Graphic design** (sitios de recursos por categoría: mockups, texturas, logos, tipografías, colores) o **Sound design** (bancos de sonidos y música, como Freesound). En Graphic y Sound design, **+ Agregar** suma un sitio con su categoría (o una nueva) y **Sacar** lo saca; los dos se suben con **Subir**, como todo lo demás. Los recursos están en `data.js`, en las listas `graphic` y `sound`.
 
 ## Carpetas
 

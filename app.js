@@ -261,9 +261,9 @@
   const promptOf = r => (typeof r.prompt === 'string' && r.prompt.trim()) ? r.prompt.trim() : buildPrompt(r);
 
   /* ---------- tabs + url ---------- */
-  // 'graphic' is the Graphic design half of the site; the other four are Web design
-  const TABS = ['refs', 'discover', 'mix', 'taste', 'graphic'];
-  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', taste: 'gusto', graphic: 'grafico' };
+  // 'graphic' and 'sound' are the Graphic and Sound design parts of the site; the other four are Web design
+  const TABS = ['refs', 'discover', 'mix', 'taste', 'graphic', 'sound'];
+  const TAB_HASH = { refs: 'referencias', discover: 'descubrir', mix: 'mezclar', taste: 'gusto', graphic: 'grafico', sound: 'sonido' };
   const tabFromHash = hash => TABS.find(t => '#' + TAB_HASH[t] === hash) || null;
   const setHash = hash => { try { history.replaceState(history.state, '', hash); } catch { /* file:// quirks */ } };
 
@@ -274,8 +274,8 @@
     for (const b of $$('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
     for (const v of $$('.view')) v.hidden = v.id !== 'view-' + t;
     if (t === 'discover') renderDiscover();
-    if (t === 'graphic') renderGraphic(); else store.set('webTab', t);
-    document.body.dataset.mode = t === 'graphic' ? 'graphic' : 'web';
+    if (isArea(t)) renderRes(t); else store.set('webTab', t);
+    document.body.dataset.mode = isArea(t) ? t : 'web';
     for (const b of $$('.mode')) b.setAttribute('aria-pressed', String(b.dataset.mode === document.body.dataset.mode));
     if (!opts || !opts.keepHash) setHash('#' + TAB_HASH[t]);
     if (!opts || opts.scroll !== false) window.scrollTo(0, 0);
@@ -343,13 +343,18 @@
     if (PEND.folderRemoves.length) fo.remove = [...PEND.folderRemoves];
     if (Object.keys(fo).length) ch.folders = fo;
     if (Object.keys(PEND.refs).length) ch.refs = Object.assign({}, PEND.refs);
-    if (G_ADDED.length) ch.graphicAdds = G_ADDED.map(a => ({ url: a.url, category: a.category || 'Otros' }));
-    if (G_HIDDEN.size) ch.graphicRemoves = [...G_HIDDEN];
+    const resAdds = [], resRemoves = [];
+    for (const area of Object.keys(AREAS)) {
+      for (const a of RES[area].added) resAdds.push({ area, url: a.url, category: a.category || 'Otros' });
+      for (const id of RES[area].hidden) resRemoves.push({ area, id });
+    }
+    if (resAdds.length) ch.resAdds = resAdds;
+    if (resRemoves.length) ch.resRemoves = resRemoves;
     return ch;
   }
   const countChanges = ch => arr2(ch.adds).length + arr2(ch.removes).length + arr2(ch.favs).length + Object.keys(ch.refs || {}).length
     + (ch.folders ? arr2(ch.folders.add).length + arr2(ch.folders.rename).length + arr2(ch.folders.remove).length : 0)
-    + arr2(ch.graphicAdds).length + arr2(ch.graphicRemoves).length;
+    + arr2(ch.resAdds).length + arr2(ch.resRemoves).length;
   function changeLines(ch) {
     const fn = ids => (ids.length ? ` → ${ids.map(folderName).join(', ')}` : '');
     const refName = id => (ALL_REFS.find(r => r.id === id) || {}).name || id;
@@ -363,8 +368,8 @@
         ...arr2(ch.folders.remove).map(id => `- Borrar carpeta: ${(DATA_FOLDERS.find(f => f.id === id) || {}).name || id}`),
       ] : []),
       ...Object.entries(ch.refs || {}).map(([id, list]) => `- ${refName(id)}${fn(list) || ' → sin carpeta'}`),
-      ...arr2(ch.graphicAdds).map(a => `- Agregar a Graphic design (${a.category}): ${a.url}`),
-      ...arr2(ch.graphicRemoves).map(id => `- Sacar de Graphic design: ${(ALL_GRAPHIC.find(g => g.id === id) || {}).name || id}`),
+      ...arr2(ch.resAdds).map(a => `- Agregar a ${AREAS[a.area].label} (${a.category}): ${a.url}`),
+      ...arr2(ch.resRemoves).map(r => `- Sacar de ${AREAS[r.area].label}: ${(RES[r.area].all.find(g => g.id === r.id) || {}).name || r.id}`),
     ];
   }
   // GitHub refuses very long links: big batches go without descriptions, then in parts
@@ -433,13 +438,13 @@
     const d = $('#add');
     $('#add-url').value = prefill || '';
     $('#add-err').hidden = true;
-    const graphic = S.tab === 'graphic';
-    $('#add-cat').hidden = !graphic;
+    const area = isArea(S.tab) ? S.tab : null;
+    $('#add-cat').hidden = !area;
     $('#add-cat').value = '';
-    if (graphic) {
-      // Graphic design: one category (the one on screen, if any), or a new one typed below
-      put($('#add-folders'), graphicCats().map(([c]) => h('button', {
-        class: 'chip', type: 'button', 'data-id': c, 'aria-pressed': String(S.gcat === c),
+    if (area) {
+      // Graphic or Sound design: one category (the one on screen, if any), or a new one typed below
+      put($('#add-folders'), resCats(area).map(([c]) => h('button', {
+        class: 'chip', type: 'button', 'data-id': c, 'aria-pressed': String(RES[area].cat === c),
         onclick: e => { for (const b of $$('.chip', $('#add-folders'))) b.setAttribute('aria-pressed', String(b === e.currentTarget && b.getAttribute('aria-pressed') !== 'true')); },
       }, c)));
     } else {
@@ -456,10 +461,10 @@
     if (!url) return false;
     const d = $('#add');
     const folders = pickedFolders($('#add-folders'));
-    if (S.tab === 'graphic') {
+    if (isArea(S.tab)) {
       const typed = $('#add-cat').value.trim().slice(0, 30);
       if (d.open) d.close();
-      addGraphic(url, typed ? typed.charAt(0).toUpperCase() + typed.slice(1) : folders[0]);
+      addRes(S.tab, url, typed ? typed.charAt(0).toUpperCase() + typed.slice(1) : folders[0]);
       return true;
     }
     if (d.open) d.close();
@@ -515,27 +520,39 @@
     toast('Sacada de Referencias');
   }
 
-  /* ---------- Graphic design: resources by category (mockups, textures, logos, fonts…) ---------- */
-  // Same idea as references: data.js has them; adding or taking one out shows here at once and goes
-  // up with "Subir" (the robot screenshots new ones)
-  const ALL_GRAPHIC = (DATA && Array.isArray(DATA.graphic) ? DATA.graphic : []).filter(g => g && g.id && safeHref(g.url));
-  const G_HIDDEN = new Set(store.get('gremoved', []).filter(id => ALL_GRAPHIC.some(g => g.id === id)));
-  store.set('gremoved', [...G_HIDDEN]);
-  let G_ADDED = store.get('gadded', []).filter(a => a && safeHref(a.url) && !ALL_GRAPHIC.some(g => siteKey(g.url) === siteKey(a.url)));
-  store.set('gadded', G_ADDED);
-  const G_ORDER = ['Mockups', 'Texturas', 'Logos', 'Tipografías', 'Colores'];
-  const graphicList = () => [
-    ...G_ADDED.map(a => ({ id: 'gadd:' + a.url, pending: true, name: nameOfHost(host(a.url)), url: a.url, category: a.category || 'Otros', note: '',
+  /* ---------- Graphic design and Sound design: resource sites by category ---------- */
+  // One list per area in data.js ("graphic", "sound"). Same idea as references: adding or taking one
+  // out shows here at once and goes up with "Subir" (the robot screenshots new ones).
+  const AREAS = {
+    graphic: { label: 'Graphic design', order: ['Mockups', 'Texturas', 'Logos', 'Tipografías', 'Colores'] },
+    sound: { label: 'Sound design', order: ['Efectos', 'Música', 'Ambientes', 'Voces'] },
+  };
+  const isArea = t => typeof t === 'string' && Object.prototype.hasOwnProperty.call(AREAS, t);
+  const RES = {};
+  for (const area of Object.keys(AREAS)) {
+    const all = (DATA && Array.isArray(DATA[area]) ? DATA[area] : []).filter(g => g && g.id && safeHref(g.url));
+    // Graphic design keeps the storage keys it had before Sound design, so nothing pending is lost
+    const keys = area === 'graphic' ? { rem: 'gremoved', add: 'gadded' } : { rem: area + '-removed', add: area + '-added' };
+    const hidden = new Set(store.get(keys.rem, []).filter(id => all.some(g => g.id === id)));
+    const added = store.get(keys.add, []).filter(a => a && safeHref(a.url) && !all.some(g => siteKey(g.url) === siteKey(a.url)));
+    RES[area] = { all, hidden, added, keys, cat: null };
+    store.set(keys.rem, [...hidden]);
+    store.set(keys.add, added);
+  }
+  const saveRes = area => { store.set(RES[area].keys.rem, [...RES[area].hidden]); store.set(RES[area].keys.add, RES[area].added); };
+  const resList = area => [
+    ...RES[area].added.map(a => ({ id: 'add:' + a.url, pending: true, name: nameOfHost(host(a.url)), url: a.url, category: a.category || 'Otros', note: '',
       image: 'https://s.wordpress.com/mshots/v1/' + encodeURIComponent(a.url) + '?w=1440&h=900' })),
-    ...ALL_GRAPHIC.filter(g => !G_HIDDEN.has(g.id)),
+    ...RES[area].all.filter(g => !RES[area].hidden.has(g.id)),
   ];
-  function graphicCats() {
+  function resCats(area) {
     const counts = new Map();
-    for (const g of graphicList()) counts.set(g.category || 'Otros', (counts.get(g.category || 'Otros') || 0) + 1);
-    const rank = c => (G_ORDER.includes(c) ? G_ORDER.indexOf(c) : 99);
+    for (const g of resList(area)) counts.set(g.category || 'Otros', (counts.get(g.category || 'Otros') || 0) + 1);
+    const order = AREAS[area].order;
+    const rank = c => (order.includes(c) ? order.indexOf(c) : 99);
     return [...counts].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], 'es'));
   }
-  function graphicCard(g) {
+  function resCard(area, g) {
     const src = g.pending ? g.image : imgSrc(arr(g.shots)[0]);
     let img = null;
     if (src) {
@@ -550,50 +567,51 @@
       g.note ? h('p', { class: 'likes' }, g.note) : null,
       h('div', { class: 'card-actions', 'data-pour': 'contain' },
         h('a', { class: 'btn sm', href: g.url, target: '_blank', rel: 'noopener noreferrer', 'data-tip': host(g.url) }, 'Abrir ↗'),
-        h('button', { class: 'btn sm ghost', type: 'button', 'data-tip': g.pending ? 'Sacar de acá' : 'De todos tus dispositivos', onclick: () => removeGraphic(g) }, 'Sacar')));
+        h('button', { class: 'btn sm ghost', type: 'button', 'data-tip': g.pending ? 'Sacar de acá' : 'De todos tus dispositivos', onclick: () => removeRes(area, g) }, 'Sacar')));
   }
-  function renderGraphic() {
-    const cats = graphicCats();
-    if (S.gcat && !cats.some(([c]) => c === S.gcat)) S.gcat = null;
-    const pick = c => () => { S.gcat = c; renderGraphic(); restoreFocus('gcat:' + (c || '')); };
-    put($('#g-cats'),
-      chip('Todas', !S.gcat, pick(null), 'gcat:'),
-      cats.map(([c, n]) => chip([c, ' ', h('span', { class: 'c' }, n)], S.gcat === c, pick(S.gcat === c ? null : c), 'gcat:' + c)));
-    const list = graphicList().filter(g => !S.gcat || (g.category || 'Otros') === S.gcat);
-    put($('#g-grid'), list.length ? list.map(graphicCard) : notice('Todavía no hay nada acá', 'Sumá recursos con + Agregar.'));
+  function renderRes(area) {
+    const st = RES[area], cats = resCats(area);
+    if (st.cat && !cats.some(([c]) => c === st.cat)) st.cat = null;
+    const pick = c => () => { st.cat = c; renderRes(area); restoreFocus(`${area}-cat:${c || ''}`); };
+    put($(`#${area}-cats`),
+      chip('Todas', !st.cat, pick(null), `${area}-cat:`),
+      cats.map(([c, n]) => chip([c, ' ', h('span', { class: 'c' }, n)], st.cat === c, pick(st.cat === c ? null : c), `${area}-cat:${c}`)));
+    const list = resList(area).filter(g => !st.cat || (g.category || 'Otros') === st.cat);
+    put($(`#${area}-grid`), list.length ? list.map(g => resCard(area, g)) : notice('Todavía no hay nada acá', 'Sumá sitios con + Agregar.'));
   }
-  function removeGraphic(g) {
+  function removeRes(area, g) {
+    const st = RES[area];
     if (g.pending) {
-      G_ADDED = G_ADDED.filter(a => a.url !== g.url);
-      store.set('gadded', G_ADDED);
-      renderGraphic();
+      st.added = st.added.filter(a => a.url !== g.url);
+      saveRes(area);
+      renderRes(area);
       renderSync();
       toast('Sacado');
       return;
     }
-    confirmBox(`¿Sacar ${g.name} de Graphic design? Después tocá Create en GitHub para sacarlo de todos tus dispositivos.`, 'Sí, sacar', () => {
-      G_HIDDEN.add(g.id);
-      store.set('gremoved', [...G_HIDDEN]);
+    confirmBox(`¿Sacar ${g.name} de ${AREAS[area].label}? Después tocá Create en GitHub para sacarlo de todos tus dispositivos.`, 'Sí, sacar', () => {
+      st.hidden.add(g.id);
+      saveRes(area);
       upload();
-      renderGraphic();
+      renderRes(area);
       renderSync();
       toast('Sacado. En GitHub tocá Create', { label: 'Deshacer', fn: () => {
-        G_HIDDEN.delete(g.id);
-        store.set('gremoved', [...G_HIDDEN]);
-        renderGraphic();
+        st.hidden.delete(g.id);
+        saveRes(area);
+        renderRes(area);
         renderSync();
       } });
     });
   }
-  function addGraphic(url, category) {
-    const k = siteKey(url);
-    const same = graphicList().find(g => siteKey(g.url) === k);
+  function addRes(area, url, category) {
+    const st = RES[area], k = siteKey(url);
+    const same = resList(area).find(g => siteKey(g.url) === k);
     if (same) { toast(`Ya estaba: ${same.name}`); return; }
-    G_ADDED = [{ url, category: category || 'Otros', at: new Date().toISOString() }, ...G_ADDED];
-    store.set('gadded', G_ADDED);
+    st.added = [{ url, category: category || 'Otros', at: new Date().toISOString() }, ...st.added];
+    saveRes(area);
     upload();
-    S.gcat = null;
-    renderGraphic();
+    st.cat = null;
+    renderRes(area);
     toast('Guardado. En GitHub tocá Create');
   }
 
@@ -1514,8 +1532,8 @@
   function boot() {
     for (const b of $$('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
     // Web design goes back to the tab you were on there
-    for (const b of $$('.mode')) b.addEventListener('click', () => setTab(b.dataset.mode === 'graphic' ? 'graphic' : store.get('webTab', 'refs')));
-    $('#g-add').addEventListener('click', () => openAdd());
+    for (const b of $$('.mode')) b.addEventListener('click', () => setTab(isArea(b.dataset.mode) ? b.dataset.mode : store.get('webTab', 'refs')));
+    for (const area of Object.keys(AREAS)) $(`#${area}-add`).addEventListener('click', () => openAdd());
     $('#mark').addEventListener('click', e => { e.preventDefault(); setTab('refs'); });
 
     let qT = 0;
@@ -1556,7 +1574,7 @@
     $('#sync-go').addEventListener('click', upload);
     // Pasting a link anywhere in Referencias (outside a field) opens the box with it
     document.addEventListener('paste', e => {
-      if ((S.tab !== 'refs' && S.tab !== 'graphic') || S.sheet || isTyping(e.target) || $$('dialog[open]').length) return;
+      if ((S.tab !== 'refs' && !isArea(S.tab)) || S.sheet || isTyping(e.target) || $$('dialog[open]').length) return;
       const url = cleanUrl(e.clipboardData && e.clipboardData.getData('text'));
       if (!url) return;
       e.preventDefault();

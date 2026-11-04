@@ -4,8 +4,9 @@
 //
 // The issue body ends with a ```json block: { adds: [{url, folders}], removes: [id], favs: [{link,
 // name, source, image, cats, desc, folders}], folders: {add: [{id, name}], rename: [{id, name}],
-// remove: [id]}, refs: {refId: [folderId]}, graphicAdds: [{url, category}], graphicRemoves: [id] }.
-// graphic* are the Graphic design resources (mockups, textures, logos, fonts…). Applying it twice changes nothing.
+// remove: [id]}, refs: {refId: [folderId]}, resAdds: [{area, url, category}], resRemoves: [{area, id}] }.
+// res* are the resource sites of each area (graphic: mockups, textures, logos, fonts…; sound: sound
+// banks…). Applying it twice changes nothing.
 // Issues titled "Agregar: site.com" or "Sacar: Name" (from before folders) still work.
 // By hand: Actions → Run workflow with a link and prueba=1 (DRY_RUN) saves nothing; the
 // screenshots and the entries go to out/.
@@ -101,7 +102,11 @@ async function main() {
     reply.push(`Saqué **${r.name}**`);
   }
 
-  const graphic = arr(data.graphic).filter(g => g && g.id);
+  // Resource sites, one list per area in data.js
+  const AREAS = { graphic: { label: 'Graphic design', prefix: 'g-' }, sound: { label: 'Sound design', prefix: 's-' } };
+  const lists = {};
+  for (const area of Object.keys(AREAS)) lists[area] = arr(data[area]).filter(g => g && g.id);
+  const isArea = a => typeof a === 'string' && Object.prototype.hasOwnProperty.call(AREAS, a);
 
   /* pages added by link: screenshots, fonts and colors */
   const fresh = [];
@@ -138,27 +143,33 @@ async function main() {
       }
     }
 
-    /* Graphic design resources (mockups, textures, logos, fonts…): taken out, or added with one screenshot */
-    for (const id of arr(ch.graphicRemoves)) {
-      const i = graphic.findIndex(g => g.id === id);
+    /* Resource sites by area (Graphic design, Sound design): taken out, or added with one screenshot.
+       graphicAdds/graphicRemoves come from issues opened before Sound design existed. */
+    const resRemoves = [...arr(ch.resRemoves), ...arr(ch.graphicRemoves).map(id => ({ area: 'graphic', id }))];
+    for (const { area, id } of resRemoves.filter(r => r && isArea(r.area))) {
+      const list = lists[area], i = list.findIndex(g => g.id === id);
       if (i < 0) continue;
-      const [g] = graphic.splice(i, 1);
+      const [g] = list.splice(i, 1);
       goneShots.push(...arr(g.shots));
-      reply.push(`Saqué **${g.name}** de Graphic design`);
+      reply.push(`Saqué **${g.name}** de ${AREAS[area].label}`);
     }
-    const gAdds = arr(ch.graphicAdds).map(a => ({ url: urlOf(a && a.url), category: str(a && a.category).slice(0, 30) || 'Otros' })).filter(a => a.url);
-    for (const a of gAdds) {
-      const same = graphic.find(g => g.url && siteKey(g.url) === siteKey(a.url));
-      if (same) { reply.push(`**${same.name}** ya estaba en Graphic design`); continue; }
+    const resAdds = [...arr(ch.resAdds), ...arr(ch.graphicAdds).map(a => Object.assign({}, a, { area: 'graphic' }))]
+      .filter(a => a && isArea(a.area))
+      .map(a => ({ area: a.area, url: urlOf(a.url), category: str(a.category).slice(0, 30) || 'Otros' }))
+      .filter(a => a.url);
+    for (const a of resAdds) {
+      const list = lists[a.area], { label, prefix } = AREAS[a.area];
+      const same = list.find(g => g.url && siteKey(g.url) === siteKey(a.url));
+      if (same) { reply.push(`**${same.name}** ya estaba en ${label}`); continue; }
       try {
         browser = browser || await startBrowser();
         const s = await captureSite(browser, a.url);
-        const id = 'g-' + idFor(a.url, new Set(graphic.map(g => String(g.id).replace(/^g-/, ''))));
+        const id = prefix + idFor(a.url, new Set(list.map(g => String(g.id).slice(prefix.length))));
         const dir = DRY ? OUT : path.join(ROOT, 'img');
         await mkdir(dir, { recursive: true });
         await writeFile(path.join(dir, `${id}.jpg`), s.shot1);
-        graphic.unshift({ id, name: s.name, url: a.url, category: a.category, note: '', shots: [`img/${id}.jpg`] });
-        reply.push(`Agregué **${s.name}** a Graphic design (${a.category})`);
+        list.unshift({ id, name: s.name, url: a.url, category: a.category, note: '', shots: [`img/${id}.jpg`] });
+        reply.push(`Agregué **${s.name}** a ${label} (${a.category})`);
       } catch (e) {
         reply.push(`No pude agregar ${a.url}: ${e.message}`);
       }
@@ -166,7 +177,7 @@ async function main() {
   } finally {
     if (browser) await browser.close();
   }
-  if (graphic.length || Array.isArray(data.graphic)) data.graphic = graphic;
+  for (const area of Object.keys(AREAS)) if (lists[area].length || Array.isArray(data[area])) data[area] = lists[area];
 
   /* ★ sites saved from Descubrir: the gallery's page and picture, no screenshot needed */
   let favs = 0;
@@ -226,7 +237,7 @@ async function main() {
   if (changedSomething && !DRY) {
     await writeFile(dataFile, after);
     // Screenshots of references taken out go too, unless another one uses them
-    const used = new Set([...data.refs, ...graphic].flatMap(r => arr(r.shots)));
+    const used = new Set([...data.refs, ...Object.values(lists).flat()].flatMap(r => arr(r.shots)));
     for (const shot of goneShots) {
       const file = path.join(ROOT, shot);
       if (/^img\//.test(shot) && !used.has(shot) && existsSync(file)) await rm(file);
